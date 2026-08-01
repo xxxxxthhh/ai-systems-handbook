@@ -3,7 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>1.5 投机解码：用小模型打草稿 · AI 系统工程手册</title>
+<title>1.5 Speculative Decoding · AI 系统工程手册</title>
+<meta name="description" content="投机解码：用小模型打草稿，什么时候有效、什么时候反而更慢。">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Noto+Sans+SC:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -20,23 +21,189 @@
 
 <header class="ch">
   <div class="blockrow" aria-hidden="true">
-    <span></span><span></span><span class="f"></span><span class="f"></span><span class="f"></span>
-    <span class="f"></span><span class="f"></span><span class="f"></span><span class="f"></span><span class="f"></span>
+    <span></span><span></span><span></span><span class="w"></span><span></span>
+    <span></span><span class="w"></span><span></span><span class="f"></span><span class="f"></span>
   </div>
   <div class="kicker">Part 1 · Inference Fundamentals 推理基础</div>
   <h1>1.5 Speculative Decoding
     <span class="zh">投机解码：用小模型打草稿</span>
   </h1>
+  <div class="meta">
+    <span>难度 <b>★★★</b></span>
+    <span>阅读 <b>~14 min</b></span>
+    <span>面试出现频率 <b>中高</b></span>
+    <span>前置 <b>1.3 Continuous Batching</b></span>
+  </div>
 </header>
 
+<!-- ================= 核心概念 ================= -->
 <section id="concept">
-  <div class="sec-tag"><span class="cell" style="background:var(--free)"></span><span class="lab">Draft 待撰写</span></div>
-  <p>本章尚未撰写。返回<a href="../index.html">全书目录</a>。</p>
+  <div class="sec-tag"><span class="cell"></span><span class="lab">Core Concept 核心概念</span></div>
+  <h2>一个反直觉的事实：验证 5 个 token 和生成 1 个几乎一样贵</h2>
+
+  <p>自回归解码有一个无法回避的结构性约束：<b>它是严格串行的</b>。第 n 个 token 不出来，第 n+1 个就没法开始。哪怕 GPU 闲得发慌，也只能一个一个来。</p>
+
+  <p>但正如 <a href="1-3-continuous-batching.html">1.3</a> 反复强调的，解码阶段是<span class="term">memory-bandwidth-bound</span>（受显存带宽限制）的——每一步的时间几乎全花在把模型权重读进计算单元，真正的乘加计算只占很小一部分。这就带来一个关键推论：</p>
+
+  <div class="formula"><b>如果已经有一串候选 token，把它们「一次性喂进模型检查对不对」，<br>耗时和生成一个 token 差不多。</b><br><br>因为这同样只需要读一遍权重（一次 forward），<br>而多算几个 token 位置的计算量，对空闲的算力单元来说微不足道。</div>
+
+  <p><span class="term">speculative decoding</span>（投机解码）就建立在这个不对称上：<b>让一个便宜的模型快速猜出接下来的 K 个 token（草稿），再让昂贵的目标模型一次性验证这 K 个猜测</b>。猜对的部分直接采纳，从第一个猜错的地方截断重来。猜得准时，一次昂贵的前向传播就产出了好几个 token。</p>
+
+  <p>这个思路和 CPU 的<span class="term">speculative execution</span>（投机执行）如出一辙：在等待慢速操作时，先赌一个分支往下算，赌对了白赚，赌错了回滚。区别只是这里赌的是 token，回滚的代价是几次浪费的草稿计算。</p>
+
+  <figure>
+    <svg viewBox="0 0 760 280" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="标准解码与投机解码的时间线对比">
+      <text x="20" y="24" class="lbl">标准解码：一次昂贵前向 = 一个 token</text>
+      <g>
+        <rect x="20"  y="38" width="86" height="30" rx="4" fill="var(--alloc)"/><text x="63"  y="58" text-anchor="middle" class="onfill">大模型</text>
+        <rect x="112" y="38" width="86" height="30" rx="4" fill="var(--alloc)"/><text x="155" y="58" text-anchor="middle" class="onfill">大模型</text>
+        <rect x="204" y="38" width="86" height="30" rx="4" fill="var(--alloc)"/><text x="247" y="58" text-anchor="middle" class="onfill">大模型</text>
+        <rect x="296" y="38" width="86" height="30" rx="4" fill="var(--alloc)"/><text x="339" y="58" text-anchor="middle" class="onfill">大模型</text>
+        <rect x="388" y="38" width="86" height="30" rx="4" fill="var(--alloc)"/><text x="431" y="58" text-anchor="middle" class="onfill">大模型</text>
+      </g>
+      <text x="486" y="58" class="mn">5 次前向 → 5 个 token</text>
+
+      <text x="20" y="106" class="lbl">投机解码：草稿 + 一次验证</text>
+      <text x="20" y="130" class="sub">① 小模型连续快跑，猜 4 个 token（每次都便宜得多）</text>
+      <g>
+        <rect x="20"  y="140" width="34" height="26" rx="3" fill="var(--free)"/><text x="37"  y="158" text-anchor="middle" class="mn">草</text>
+        <rect x="58"  y="140" width="34" height="26" rx="3" fill="var(--free)"/><text x="75"  y="158" text-anchor="middle" class="mn">草</text>
+        <rect x="96"  y="140" width="34" height="26" rx="3" fill="var(--free)"/><text x="113" y="158" text-anchor="middle" class="mn">草</text>
+        <rect x="134" y="140" width="34" height="26" rx="3" fill="var(--free)"/><text x="151" y="158" text-anchor="middle" class="mn">草</text>
+      </g>
+
+      <text x="20" y="196" class="sub">② 大模型一次前向，并行验证全部 4 个草稿 + 顺带产出第 5 个</text>
+      <rect x="20" y="206" width="240" height="30" rx="4" fill="var(--alloc)"/>
+      <text x="140" y="226" text-anchor="middle" class="onfill">大模型 · 一次前向验证</text>
+
+      <text x="290" y="226" class="mn">结果：</text>
+      <g>
+        <rect x="340" y="206" width="34" height="30" rx="3" fill="var(--alloc)"/><text x="357" y="226" text-anchor="middle" class="onfill">✓</text>
+        <rect x="378" y="206" width="34" height="30" rx="3" fill="var(--alloc)"/><text x="395" y="226" text-anchor="middle" class="onfill">✓</text>
+        <rect x="416" y="206" width="34" height="30" rx="3" fill="var(--alloc)"/><text x="433" y="226" text-anchor="middle" class="onfill">✓</text>
+        <rect x="454" y="206" width="34" height="30" rx="3" fill="var(--waste)"/><text x="471" y="226" text-anchor="middle" class="onfill">✗</text>
+        <rect x="492" y="206" width="34" height="30" rx="3" fill="var(--alloc-soft)" stroke="var(--alloc)"/><text x="509" y="226" text-anchor="middle" class="mn">+1</text>
+      </g>
+      <text x="20" y="266" class="sub">被拒的草稿及其之后的全部内容作废；本轮净产出 4 个 token（3 个接受 + 1 个由大模型直接给出）</text>
+    </svg>
+    <figcaption><b>图 1 · 投机解码的一轮。</b>灰块 = 便宜的草稿模型前向；蓝块 = 昂贵的目标模型前向。收益的来源是<b>把多次串行的昂贵前向，压缩成一次昂贵前向 + 若干次便宜前向</b>。橙色 ✗ 之后的草稿必须全部丢弃——这是投机失败的成本。</figcaption>
+  </figure>
+
+  <h3>关键性质：输出分布完全不变</h3>
+  <p>投机解码最容易被误解的一点是：<b>它不是近似加速，输出质量没有任何损失</b>。这不是「效果差不多」，而是数学上的严格等价——通过一种特殊的接受/拒绝采样规则，最终产出的 token 序列与直接用目标模型采样<b>服从完全相同的分布</b>。</p>
+
+  <p>直觉上是这样：草稿 token 以目标模型给它的概率为准被接受，一旦被拒，就从一个经过修正的残差分布里重新采样，恰好补偿掉草稿模型带来的偏差。所以草稿模型的质量<b>只影响速度，不影响正确性</b>——猜得差顶多是白费力气，绝不会污染输出。这个性质极其重要：它意味着开启投机解码<b>不需要重新做质量评估</b>，这在工程上是罕见的好事。</p>
+
+  <h3>什么时候有效，什么时候反而更慢</h3>
+  <p>投机解码的收益由三个量决定，缺一不可：</p>
+
+  <div class="formula">在「每个草稿 token 独立地以概率 α 被接受」这一简化假设下：<br><br>一轮期望产出 token 数 = 1 + α + α² + … + α<sup>K</sup> = (1 − α<sup>K+1</sup>) / (1 − α)<br><br>α = 接受率，K = 每轮草稿长度<br><br>α=0.8, K=4 → 期望产出 ≈ <b>3.4 个 token</b>／一次目标模型前向<br>α=0.4, K=4 → 期望产出 ≈ <b>1.6 个 token</b>／一次目标模型前向<br><br>（本式为按上述独立性假设直接推导，用于建立直觉；真实接受率逐位置相关，需实测）</div>
+
+  <p>把草稿模型的开销算进来，净加速大致是「期望产出 ÷ (1 + K × 草稿模型相对成本)」。于是三个失效条件一目了然：</p>
+
+  <p><b>① 接受率太低。</b>草稿模型和目标模型的分布差太远，猜十次错八次，草稿计算全部白费，净效果是变慢。这也是为什么草稿模型通常要选<b>同系列、同 tokenizer</b>的小模型——分布相近才猜得准。</p>
+
+  <p><b>② 草稿模型不够便宜。</b>如果草稿模型是目标模型的 1/3 大，跑 4 步草稿就花掉了 1.3 倍目标模型前向的时间，收益被吃光。经验上草稿模型要小一到两个数量级才划算。</p>
+
+  <p><b>③ batch 已经很大。</b>这是最容易被忽略、也最致命的一条。投机解码的全部前提是「算力有空闲，多验证几个 token 不要钱」。但在高并发服务端，连续批处理已经把算力喂饱了——此时验证 K 个 token 的计算量是<b>实打实的额外开销</b>，那个「几乎免费」的假设直接失效。<b>投机解码本质上是在用算力换延迟。</b>算力富余（低并发、本地推理、大模型小 batch）时它是白赚；算力紧张（高并发服务）时它是负收益，甚至会拉低整体吞吐。</p>
+
+  <div class="callout">
+    <p><b>一句话记忆：投机解码优化的是延迟，不是吞吐。</b>它让单个用户感觉更快，但会消耗更多总算力。如果你的目标是「同样的卡服务更多人」，它多半不是你要的东西；如果你的目标是「让这一个用户的响应更快」，它可能非常有效。这个取舍与 <a href="2-1-latency-metrics.html">2.1 节</a>的 latency-throughput 主题是同一件事的两面。</p>
+  </div>
+</section>
+
+<!-- ================= 案例 ================= -->
+<section id="case">
+  <div class="sec-tag"><span class="cell" style="background:var(--waste)"></span><span class="lab">Case Study 真实案例</span></div>
+  <h2>提出投机解码的那篇论文</h2>
+
+  <div class="case">
+    <div class="case-head"><span class="cell"></span>Fast Inference from Transformers via Speculative Decoding (ICML 2023)</div>
+    <div class="case-body">
+      <p>Leviathan、Kalman、Matias 的这篇论文提出了投机解码算法。它的出发点是一个语言学上的观察：<b>困难的语言建模任务里往往包含大量容易的子任务</b>——句子的后半截、固定搭配、代码里的样板结构，这些位置用一个小得多的模型就能预测得八九不离十。</p>
+      <div class="stats">
+        <div class="stat"><div class="n good">2×–3×</div><div class="l">T5-XXL 上相对标准 T5X 实现的加速</div></div>
+        <div class="stat"><div class="n good">完全一致</div><div class="l">输出与原模型分布相同（identical outputs）</div></div>
+        <div class="stat"><div class="n good">0</div><div class="l">需要的重训练 / 架构改动</div></div>
+      </div>
+      <p><b>条件同样要记住</b>：这是在 T5-XXL 上、以标准 T5X 实现为基线测得的。它是一个 encoder-decoder 模型，测试负载与今天典型的高并发聊天服务相差很大——不要把 2–3× 直接套用到你的场景上。</p>
+      <p>这项工作真正的分量在于两点：<b>其一</b>，它指出了「验证比生成便宜得多」这个此前未被利用的不对称性；<b>其二</b>，它证明了加速<b>可以做到分布无损</b>，从而把这类优化从「质量换速度」的范畴里摘了出来。后续的 Medusa、EAGLE、n-gram 查表等一系列变体，改的都是「草稿从哪来」，而分布无损的验证框架基本延续了下来。</p>
+      <div class="src">来源：Leviathan, Kalman, Matias, "Fast Inference from Transformers via Speculative Decoding", ICML 2023 (arXiv:2211.17192). 数字引自论文；示意图为本书重绘。期望产出公式为本书按独立性假设自行推导，用于建立直觉。</div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 工具层 ================= -->
+<section id="tools">
+  <div class="sec-tag"><span class="cell" style="background:var(--free)"></span><span class="lab">Tooling Sidebar 工具层</span></div>
+  <div class="toolbox">
+    <div class="toolbox-head">
+      <span class="t">草稿从哪来：主流变体（会过期，正文不依赖本区块）</span>
+      <span class="date">截至 2026-08</span>
+    </div>
+    <div class="toolbox-body">
+      <p><b>独立草稿模型</b>：最原始的形态，用同系列的小模型（如 70B 配 1B）。要求 tokenizer 完全一致，否则无法逐位置比对。</p>
+      <p><b>n-gram / prompt lookup</b>：不用任何模型，直接从<b>输入上下文里</b>查找重复片段作为草稿。零额外显存、零训练成本，在「输出大量复述输入」的任务（代码编辑、文档改写、RAG 摘要）上接受率意外地高，是性价比最高的先试项。</p>
+      <p><b>Medusa / EAGLE 系</b>：在目标模型上加轻量预测头，一次前向直接给出多个位置的候选，省掉独立草稿模型的部署负担；需要一轮小规模训练。EAGLE 系通常在特征层做预测，接受率高于朴素多头方案。</p>
+      <p><b>框架支持</b>：vLLM、TensorRT-LLM 等主流框架均已内置投机解码支持，可配置草稿长度 K（常见 3–5）。<b>K 不是越大越好</b>——K 增大，一次验证的潜在收益上升，但被拒时浪费的草稿计算也线性上升，通常存在一个由接受率决定的最优值，需实测。</p>
+      <p><b>上线前必测</b>：在<b>真实并发</b>下对比开/关的 TTFT、TPOT 与总吞吐。只在 batch=1 下测会得到过于乐观的结论；很多团队正是这样把一个降低总吞吐的配置发到了生产。</p>
+    </div>
+  </div>
+</section>
+
+<!-- ================= Quiz ================= -->
+<section id="quiz">
+  <div class="sec-tag"><span class="cell"></span><span class="lab">Quiz 自测</span></div>
+  <h2>章末自测</h2>
+  <div class="quiz">
+
+    <details>
+      <summary><span class="qtype">场景判断</span>以下四种负载，哪些适合开投机解码？A. 面向公网、GPU 长期打满的聊天服务；B. 本地单人用的代码补全插件；C. 夜间批量跑十万条文档摘要，只关心总耗时；D. 内部低频使用的长文档问答，GPU 大部分时间空闲但要求响应快。</summary>
+      <div class="answer">
+        <p><b>B 和 D 适合，A 和 C 不适合。</b>判断只需问一句：<b>算力有没有富余？我要的是延迟还是吞吐？</b></p>
+        <p><b>B ✓</b>：单用户、batch=1，算力大量闲置，且代码补全的输出高度可预测（样板结构多），接受率天然高。这是投机解码的理想场景。</p>
+        <p><b>D ✓</b>：GPU 空闲 = 算力免费，要求响应快 = 目标是延迟。正好是「用富余算力换延迟」的定义。</p>
+        <p><b>A ✗</b>：GPU 已打满，连续批处理已经吃掉了所有算力余量。此时投机解码的额外验证计算是真实成本，会挤占本可服务其他请求的算力，总吞吐下降。</p>
+        <p><b>C ✗</b>：只关心总耗时 = 纯吞吐目标，而投机解码提升的是延迟、消耗的是算力。正确做法是把 batch 开到最大。</p>
+        <p><b>记住这条判断线</b>：投机解码是「算力换延迟」，所以它的适用区间和高并发服务天然冲突。</p>
+      </div>
+    </details>
+
+    <details>
+      <summary><span class="qtype">估算题</span>草稿长度 K=4，实测接受率 α≈0.7。草稿模型每次前向的成本是目标模型的 1/10。估算净加速比。</summary>
+      <div class="answer">
+        <p><b>期望产出</b>：(1 − 0.7⁵)/(1 − 0.7) = (1 − 0.168)/0.3 ≈ <b>2.77 个 token/轮</b>。</p>
+        <p><b>每轮成本</b>（以目标模型一次前向为 1 单位）：1（验证） + 4 × 0.1（草稿） = <b>1.4 单位</b>。</p>
+        <p><b>净加速</b> ≈ 2.77 / 1.4 ≈ <b>1.98×</b>，即约 2 倍。</p>
+        <p><b>敏感性检查</b>（比结果本身更值得做）：若 α 掉到 0.4，期望产出 = (1−0.4⁵)/0.6 ≈ 1.65，净加速 ≈ 1.65/1.4 ≈ <b>1.18×</b>——收益几乎消失。若草稿模型成本升到 1/3，α=0.7 时净加速 ≈ 2.77/2.33 ≈ <b>1.19×</b>。</p>
+        <p>结论：<b>接受率和草稿成本任何一个恶化，收益都会迅速塌缩。</b>这解释了为什么投机解码在实验室里漂亮、在生产里经常令人失望——真实流量的接受率通常低于精心挑选的测试集。上线前务必用真实流量实测 α。</p>
+      </div>
+    </details>
+
+    <details>
+      <summary><span class="qtype">概念题</span>草稿模型质量很差会不会导致输出质量下降？为什么？</summary>
+      <div class="answer">
+        <p><b>不会。</b>投机解码通过特定的接受/拒绝采样规则保证最终输出与直接用目标模型采样<b>服从相同分布</b>——草稿被拒时会从修正后的残差分布重新采样，恰好抵消草稿模型引入的偏差。</p>
+        <p>所以草稿模型差只有一个后果：<b>接受率低 → 白费算力 → 变慢</b>，甚至比不开还慢。质量始终由目标模型独自决定。</p>
+        <p><b>工程含义</b>：这是一个可以放心开关的优化——不需要重跑质量评估，A/B 只需比较延迟和吞吐。在满是「质量换速度」权衡的推理优化里，这种「纯粹的工程优化」很少见，值得单独记住。</p>
+      </div>
+    </details>
+
+    <details>
+      <summary><span class="qtype">面试题改编</span>「为什么并行验证多个 token 几乎不增加耗时？这个前提在什么条件下不成立？」</summary>
+      <div class="answer">
+        <p><b>前提成立的原因</b>：解码阶段受显存带宽限制。一次前向的时间主要花在把全部模型权重从显存读进计算单元；同时验证 K 个 token 位置只是多做了一点矩阵计算，而算力单元本来就在空转。所以耗时几乎不随 K 增长——<b>省的是带宽，多花的是本来就闲置的算力</b>。</p>
+        <p><b>不成立的条件</b>（这才是考点）：当算力已经被占满时。具体有三种情况——① <b>大 batch 服务</b>：连续批处理已把算力喂饱，验证的计算量变成真实开销；② <b>K 取得过大</b>：验证的计算量累积到足以由算力主导；③ <b>长上下文</b>：attention 部分的计算量随序列长度增长，算力占比上升。</p>
+        <p>能主动指出「这是一个带前提的优化，而前提在高并发下会失效」，比只会描述算法流程更能体现系统判断力。</p>
+      </div>
+    </details>
+
+  </div>
 </section>
 
 <nav class="next">
-  <a href="1-4-quantization.html">← 1.4 量化：质量、显存与速度的三角</a>
-  <a href="2-1-latency-metrics.html">2.1 延迟指标体系：TTFT / TPOT / E2E →</a>
+  <a href="1-4-quantization.html">← 1.4 量化 Quantization</a>
+  <a href="2-1-latency-metrics.html">2.1 延迟指标体系 →</a>
 </nav>
 
 </div>

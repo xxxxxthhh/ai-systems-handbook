@@ -3,7 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>1.4 量化：质量、显存与速度的三角 · AI 系统工程手册</title>
+<title>1.4 量化 Quantization · AI 系统工程手册</title>
+<meta name="description" content="量化为什么可行、离群值问题，以及质量-显存-速度的三角取舍。">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Noto+Sans+SC:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -20,23 +21,210 @@
 
 <header class="ch">
   <div class="blockrow" aria-hidden="true">
-    <span></span><span></span><span class="f"></span><span class="f"></span><span class="f"></span>
+    <span></span><span></span><span></span><span></span><span></span>
     <span class="f"></span><span class="f"></span><span class="f"></span><span class="f"></span><span class="f"></span>
   </div>
   <div class="kicker">Part 1 · Inference Fundamentals 推理基础</div>
   <h1>1.4 Quantization
     <span class="zh">量化：质量、显存与速度的三角</span>
   </h1>
+  <div class="meta">
+    <span>难度 <b>★★☆</b></span>
+    <span>阅读 <b>~15 min</b></span>
+    <span>面试出现频率 <b>高</b></span>
+    <span>前置 <b>1.2 KV Cache</b></span>
+  </div>
 </header>
 
+<!-- ================= 核心概念 ================= -->
 <section id="concept">
-  <div class="sec-tag"><span class="cell" style="background:var(--free)"></span><span class="lab">Draft 待撰写</span></div>
-  <p>本章尚未撰写。返回<a href="../index.html">全书目录</a>。</p>
+  <div class="sec-tag"><span class="cell"></span><span class="lab">Core Concept 核心概念</span></div>
+  <h2>为什么可以用更少的比特表示同一个模型</h2>
+
+  <p><span class="term">quantization</span>（量化）就是把模型参数从高精度数值（如 FP16，每个参数 2 字节）改用低精度表示（INT8 1 字节、INT4 半字节）。它之所以可行，靠的是两个互相独立的事实。</p>
+
+  <p><b>事实一：权重是冗余的。</b>神经网络严重过参数化，单个权重的精确数值并不重要，重要的是它们共同构成的函数。把一个权重从 0.1374 近似成 0.14，对最终输出的影响通常小到看不见——只要这个误差不系统性地累积。量化的全部技术难度都在「怎么让误差不累积」上。</p>
+
+  <p><b>事实二：推理是访存受限的。</b>如 <a href="1-3-continuous-batching.html">1.3</a> 所述，解码阶段的瓶颈是把权重从显存搬进计算单元。参数从 2 字节压到 0.5 字节，<b>要搬的数据直接少了 4 倍</b>——即使计算时再解压回高精度做乘法，也仍然更快。这就是所谓 <span class="term">weight-only quantization</span>（仅权重量化）能加速的原因：<b>它省的是带宽，不是算力。</b></p>
+
+  <div class="formula">70 亿参数模型的权重显存占用（仅权重，不含 KV cache 与激活）<br><br>FP16 : 7B × 2 bytes = <b>14 GB</b>　→ 24GB 卡勉强，16GB 卡放不下<br>INT8 : 7B × 1 byte  = <b>7 GB</b>　 → 16GB 卡从容，KV cache 还有余量<br>INT4 : 7B × 0.5 byte = <b>3.5 GB</b>　→ 消费级显卡可跑<br><br>（实际占用还需加上量化元数据（scale / zero-point）等开销，通常在 10% 量级以内）</div>
+
+  <p>请注意这个计算真正的含义：<b>量化改变的往往不是「快多少」，而是「能不能跑」</b>。它把一个模型从「需要 A100」变成「一张消费级卡就够」，或者把省下的显存让给 KV cache 从而支持更大的并发——后者常常才是生产环境里更值钱的收益。</p>
+
+  <figure>
+    <svg viewBox="0 0 760 250" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="不同量化等级下显存占用与质量损失的对比">
+      <text x="20" y="24" class="lbl">7B 模型：位宽 → 权重显存 → 典型质量损失</text>
+
+      <!-- FP16 -->
+      <text x="20" y="66" class="mn">FP16</text>
+      <rect x="80" y="52" width="440" height="26" rx="4" fill="var(--alloc)"/>
+      <text x="92" y="70" class="onfill">14 GB</text>
+      <text x="536" y="70" class="sub">基线，质量无损</text>
+
+      <!-- INT8 -->
+      <text x="20" y="112" class="mn">INT8</text>
+      <rect x="80" y="98" width="220" height="26" rx="4" fill="var(--alloc)"/>
+      <text x="92" y="116" class="onfill">7 GB</text>
+      <rect x="300" y="98" width="220" height="26" rx="4" fill="var(--free)"/>
+      <text x="536" y="116" class="sub">质量损失通常可忽略</text>
+
+      <!-- INT4 -->
+      <text x="20" y="158" class="mn">INT4</text>
+      <rect x="80" y="144" width="110" height="26" rx="4" fill="var(--alloc)"/>
+      <text x="92" y="162" class="onfill">3.5 GB</text>
+      <rect x="190" y="144" width="330" height="26" rx="4" fill="var(--free)"/>
+      <text x="536" y="162" class="sub">小幅损失，方法与模型规模敏感</text>
+
+      <!-- INT2 -->
+      <text x="20" y="204" class="mn">INT2</text>
+      <rect x="80" y="190" width="55" height="26" rx="4" fill="var(--alloc)"/>
+      <text x="88" y="208" class="onfill">1.8G</text>
+      <rect x="135" y="190" width="385" height="26" rx="4" fill="var(--waste)"/>
+      <text x="536" y="208" class="sub">质量常显著崩塌</text>
+
+      <text x="20" y="240" class="sub">灰色 = 相对 FP16 省下的显存；橙色 = 进入质量崩塌区。收益随位宽下降递减，风险则加速上升。</text>
+    </svg>
+    <figcaption><b>图 1 · 位宽下降的收益与风险不对称。</b>显存占用为按位宽直接换算的结果；质量一列为定性描述——具体损失高度依赖量化方法、模型规模与任务类型，<b>必须在你自己的 eval 集上实测</b>（见 <a href="6-4-eval-pipeline.html">6.4</a>），不能照搬他人结论。</figcaption>
+  </figure>
+
+  <h3>为什么朴素量化会在大模型上失败：离群值</h3>
+  <p>量化的基本操作是把一段浮点数值范围线性映射到有限的整数格子上。这个映射的精度取决于<b>范围</b>：范围越宽，每个格子代表的区间越大，误差越大。而 Transformer 的激活值里存在<span class="term">outlier</span>（离群值）——极少数维度上的数值比其他维度大出几个数量级。</p>
+
+  <p>一个离群值就足以把整个张量的数值范围撑大几十倍，导致其余 99.9% 的正常值全部被挤进极少数格子里，信息几乎损失殆尽。这就是为什么「INT8 在小模型上好好的，换到大模型就崩了」——离群值现象随模型规模增长而涌现。</p>
+
+  <figure>
+    <svg viewBox="0 0 760 200" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="离群值如何撑大量化范围导致精度损失">
+      <text x="20" y="24" class="lbl">一个离群值毁掉整个张量的量化精度</text>
+
+      <text x="20" y="60" class="sub">数值分布：绝大多数值集中在小范围内，极少数维度是离群值</text>
+      <line x1="60" y1="96" x2="700" y2="96" stroke="var(--line)" stroke-width="2"/>
+      <g fill="var(--alloc)">
+        <circle cx="92" cy="96" r="5"/><circle cx="106" cy="96" r="5"/><circle cx="120" cy="96" r="5"/>
+        <circle cx="134" cy="96" r="5"/><circle cx="148" cy="96" r="5"/><circle cx="162" cy="96" r="5"/>
+        <circle cx="176" cy="96" r="5"/><circle cx="190" cy="96" r="5"/><circle cx="204" cy="96" r="5"/>
+      </g>
+      <circle cx="660" cy="96" r="7" fill="var(--waste)"/>
+      <text x="600" y="82" class="mn" fill="var(--waste)">离群值</text>
+      <text x="80" y="120" class="mn">99.9% 的正常值</text>
+
+      <!-- range bar -->
+      <line x1="92" y1="146" x2="660" y2="146" stroke="var(--waste)" stroke-width="2" stroke-dasharray="5 4"/>
+      <text x="300" y="140" class="mn" fill="var(--waste)">量化范围被撑到这么宽</text>
+      <rect x="92" y="156" width="568" height="14" rx="3" fill="var(--waste-soft)" stroke="var(--waste)"/>
+      <rect x="92" y="156" width="118" height="14" rx="3" fill="var(--alloc)"/>
+      <text x="92" y="190" class="sub">结果：所有正常值被压进最左边的一两个量化格子里 —— 它们之间的差异被抹平了</text>
+    </svg>
+    <figcaption><b>图 2 · 离群值的破坏机制。</b>解决思路由此自然导出：要么<b>把离群值单独拎出来用高精度算</b>（混合精度分解），要么<b>缩小分组范围</b>让离群值只污染一个小组（per-group 量化），要么<b>事先把离群值的影响转移到权重上</b>（等价缩放）。主流方法都是这三条路的变体。</figcaption>
+  </figure>
+
+  <h3>三个必须分清的坐标轴</h3>
+  <div class="tbl-scroll">
+  <table>
+    <thead><tr><th>维度</th><th>选项</th><th>关键差别</th></tr></thead>
+    <tbody>
+      <tr><td><b>量化什么</b></td><td>仅权重 / 权重+激活 / KV cache</td><td>仅权重省带宽与显存，是低并发场景的主力；权重+激活才能用上低精度算力单元，高并发大 batch 收益更大；KV cache 量化直接放大并发上限（见 <a href="1-2-kv-cache.html">1.2</a>）</td></tr>
+      <tr><td><b>什么时候量化</b></td><td>PTQ 训练后 / QAT 训练时</td><td><span class="term">PTQ</span>（post-training quantization）拿现成模型直接压，几分钟到几小时，是绝大多数应用层场景的默认选择；<span class="term">QAT</span>（quantization-aware training）在训练中模拟量化误差，质量更好但要重训，成本高得多</td></tr>
+      <tr><td><b>粒度多细</b></td><td>per-tensor / per-channel / per-group</td><td>分组越细，离群值的污染范围越小、质量越好，但元数据开销和 kernel 复杂度越高。per-group（如每 128 个权重一组）是常见折中</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <p>面试与实践中最常见的混淆是第一条：<b>「量化后更快」这句话必须问清是哪种量化、什么 batch</b>。仅权重量化在 batch=1 的本地推理上提速明显，但在大 batch 的服务端场景里，瓶颈已经从带宽转向算力，此时若计算仍要解压回 FP16 进行，加速会明显缩水甚至反向。</p>
+</section>
+
+<!-- ================= 案例 ================= -->
+<section id="case">
+  <div class="sec-tag"><span class="cell" style="background:var(--waste)"></span><span class="lab">Case Study 真实案例</span></div>
+  <h2>三篇论文，三条解决离群值的路</h2>
+
+  <div class="case">
+    <div class="case-head"><span class="cell"></span>LLM.int8() (NeurIPS 2022) · GPTQ (ICLR 2023) · AWQ (MLSys 2024)</div>
+    <div class="case-body">
+      <p><b>LLM.int8() 首先把问题指认清楚。</b>Dettmers 等人发现离群特征是<b>系统性涌现</b>的，而非随机噪声：</p>
+      <div class="stats">
+        <div class="stat"><div class="n bad">6.7B</div><div class="l">离群特征在所有层中全面出现的规模拐点</div></div>
+        <div class="stat"><div class="n">~6</div><div class="l">承载约 15 万个离群值的特征维度数</div></div>
+        <div class="stat"><div class="n bad">600–1000%</div><div class="l">把这些维度置零后的困惑度劣化幅度</div></div>
+        <div class="stat"><div class="n">~0.1%</div><div class="l">离群值占全部输入特征的比例</div></div>
+      </div>
+      <p>这组数字的分量在于：占比 0.1% 的一小撮维度，删掉就让模型崩溃——它们不是可以被平均掉的噪声，而是模型功能的关键载体。解法随之确定：把这 0.1% 单独用高精度矩阵乘法算，其余 99.9% 走 INT8，两部分结果再合并。</p>
+
+      <p><b>GPTQ 换了一条路：更聪明地逼近。</b>它基于近似二阶信息逐层做一次性量化，把误差沿权重矩阵有序补偿掉。论文报告可在<b>约 4 个 GPU 小时</b>内把 175B 规模的模型量化到 3–4 bit；对 OPT-175B 做 3-bit 量化后困惑度为 <b>8.68</b>，全精度基线为 <b>8.34</b>。这使得 175B 模型首次得以在单张 GPU 上做生成式推理。</p>
+
+      <p><b>AWQ 则从「哪些权重重要」入手。</b>它的核心观察是权重并非同等重要——<b>保护约 1% 的显著权重就能大幅降低量化误差</b>；而判断哪些权重显著，要<b>看激活值分布而不是看权重本身</b>。它通过搜索逐通道缩放系数来保护这部分权重，不需要反向传播或重建，因而不易过拟合校准集。论文报告其实现相对 HuggingFace FP16 实现取得<b>超过 3 倍</b>的加速，并获 MLSys 2024 最佳论文奖。</p>
+
+      <p><b>把三者放在一起看</b>，你会看到同一个问题的三种应对姿势：<b>隔离</b>（LLM.int8()）、<b>补偿</b>（GPTQ）、<b>重分配</b>（AWQ）。这个「异常值要么隔离、要么补偿、要么归一」的模式在系统工程里到处都是——记住模式比记住方法名有用得多。</p>
+      <div class="src">来源：Dettmers et al., "LLM.int8(): 8-bit Matrix Multiplication for Transformers at Scale", NeurIPS 2022；Frantar et al., "GPTQ: Accurate Post-Training Quantization for Generative Pre-trained Transformers", ICLR 2023；Lin et al., "AWQ: Activation-aware Weight Quantization for On-Device LLM Compression and Acceleration", MLSys 2024. 数字均引自各论文；示意图为本书重绘。</div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 工具层 ================= -->
+<section id="tools">
+  <div class="sec-tag"><span class="cell" style="background:var(--free)"></span><span class="lab">Tooling Sidebar 工具层</span></div>
+  <div class="toolbox">
+    <div class="toolbox-head">
+      <span class="t">量化格式与选型速查（会过期，正文不依赖本区块）</span>
+      <span class="date">截至 2026-08</span>
+    </div>
+    <div class="toolbox-body">
+      <p><b>GPTQ / AWQ</b>：4-bit 仅权重量化的两大主流 PTQ 方案，主流推理框架普遍支持，社区已有大量预量化权重可直接下载。AWQ 因不依赖反向传播，通常被认为对校准集更鲁棒。</p>
+      <p><b>FP8</b>：较新硬件（Hopper 及之后的 NVIDIA GPU 等）提供原生 FP8 算力，可同时量化权重与激活，<b>能真正吃到低精度算力单元的加速</b>，在高并发服务端场景优于仅权重的 INT4。代价是需要对应的硬件。</p>
+      <p><b>GGUF / llama.cpp 系</b>：面向本地与 CPU/端侧推理的格式，提供从 2-bit 到 8-bit 的多档方案，命名如 <code>Q4_K_M</code>；社区经验一般认为 4-bit 及以上档位在多数任务上可用，2-bit 档位质量风险明显。</p>
+      <p><b>KV cache 量化</b>：与权重量化正交，可叠加。FP8 / INT8 KV cache 已在主流框架落地，直接换来更大并发或更长上下文——在显存受限的服务端，这一项的性价比常被低估。</p>
+      <p><b>选型顺序建议</b>：先问「是显存装不下，还是速度不够？」显存问题优先考虑 4-bit 仅权重 + KV cache 量化；速度问题且硬件支持则优先 FP8。<b>无论选哪条，都必须在自己的 eval 集上跑回归</b>——公开榜单上的平均分掩盖不了你特定任务上的退化。</p>
+    </div>
+  </div>
+</section>
+
+<!-- ================= Quiz ================= -->
+<section id="quiz">
+  <div class="sec-tag"><span class="cell"></span><span class="lab">Quiz 自测</span></div>
+  <h2>章末自测</h2>
+  <div class="quiz">
+
+    <details>
+      <summary><span class="qtype">估算题</span>一张 24GB 显存的卡，要跑 13B 模型并支持尽可能高的并发。用 FP16 与 INT4 各能给 KV cache 留多少空间？（该模型 40 层、hidden 5120，KV cache 按 FP16 计）</summary>
+      <div class="answer">
+        <p><b>权重</b>：FP16 = 13B × 2 = 26 GB → <b>根本装不下</b>，24GB 卡直接出局。INT4 = 13B × 0.5 ≈ 6.5 GB，加上量化元数据与运行时开销按 7.5 GB 估。</p>
+        <p><b>留给 KV cache</b>：24 − 7.5 − 激活/框架开销（保守留 2 GB）≈ <b>14.5 GB</b>。</p>
+        <p><b>换算成 token 预算</b>：套 <a href="1-2-kv-cache.html">1.2</a> 的公式，per-token = 2 × 40 × 5120 × 2 bytes ≈ 800 KB。14.5 GB / 800 KB ≈ <b>约 1.9 万 token</b>——例如 9 条 2K 上下文的并发请求。</p>
+        <p><b>进一步</b>：若同时启用 INT8 KV cache，per-token 减半，token 预算翻倍到约 3.8 万。<b>注意这里发生了什么：权重量化决定了「能不能跑」，KV cache 量化决定了「能跑多少并发」——两个不同的问题，需要两个不同的旋钮。</b></p>
+      </div>
+    </details>
+
+    <details>
+      <summary><span class="qtype">概念题</span>为什么仅权重的 INT4 量化在本地单用户场景提速明显，在高并发服务端却可能收益有限？</summary>
+      <div class="answer">
+        <p>因为两个场景的瓶颈不同。<b>本地 batch=1</b>：解码严格受显存带宽限制，权重搬运量减少 4 倍直接转化为提速。<b>服务端大 batch</b>：一次权重读取被摊薄到几十条序列上，瓶颈已从带宽转向算力；此时若 kernel 仍需把 INT4 解压回 FP16 做乘法，反而增加了解压开销，净收益可能很小。</p>
+        <p><b>推论</b>：服务端要拿到真加速，需要的是权重与激活同时低精度、并有原生低精度算力支持的方案（如 FP8）。这也是「量化能加速吗」这个问题必须先问「batch 多大、量化什么」的原因。</p>
+      </div>
+    </details>
+
+    <details>
+      <summary><span class="qtype">场景判断</span>团队把线上模型从 FP16 换成 4-bit，公开基准测试分数只掉了不到 1%，于是直接上线。两周后客服反馈「模型偶尔会把 JSON 格式写错」。这里的方法论错误是什么？</summary>
+      <div class="answer">
+        <p>错误是<b>用平均分代替了任务级回归测试</b>。公开基准的综合分是大量异质任务的平均，1% 的整体下滑完全可能由某一类能力的显著退化构成，而这类能力恰好是你的产品依赖的。</p>
+        <p>格式遵循、长程一致性、少数语言的能力、工具调用参数的准确性——这些「窄而关键」的能力在综合基准里权重很低，却往往是量化后最先受损的部分。</p>
+        <p><b>正确做法</b>：量化是一次<b>模型变更</b>，必须走和换模型同等规格的流程——用你自己的、覆盖真实任务分布的 eval 集做回归（<a href="6-4-eval-pipeline.html">6.4</a>），关键指标（如 JSON 可解析率）单独设阈值，并优先灰度而非全量切换。另外，格式稳定性问题本身也有比「不量化」更直接的解法：constrained decoding（约束解码）。</p>
+      </div>
+    </details>
+
+    <details>
+      <summary><span class="qtype">面试题改编</span>「为什么大模型量化比小模型难？」</summary>
+      <div class="answer">
+        <p>核心是<b>离群特征随规模涌现</b>。LLM.int8() 的测量显示，在 6.7B 参数规模上，离群特征开始在<b>所有</b> Transformer 层中一致地出现（更小的模型里，各层对「用哪个维度承载大数值」尚未达成一致）。这些离群值只占约 0.1% 的特征，却承载着关键信息——把它们置零会让困惑度劣化 600–1000%。</p>
+        <p>而量化的精度取决于数值范围，一个比其余值大几个数量级的离群值会把范围撑爆，让 99.9% 的正常值挤进极少数量化格子。<b>所以难点不是「参数多」，而是「参数的数值分布出现了长尾结构」。</b></p>
+        <p>能补一句会更好：这也解释了为什么解法都围绕范围做文章——隔离离群值（混合精度）、缩小分组范围（per-group）、或把离群值的影响等价地转移出去（缩放）。</p>
+      </div>
+    </details>
+
+  </div>
 </section>
 
 <nav class="next">
-  <a href="1-3-continuous-batching.html">← 1.3 连续批处理：吞吐提升从哪来</a>
-  <a href="1-5-speculative-decoding.html">1.5 投机解码：用小模型打草稿 →</a>
+  <a href="1-3-continuous-batching.html">← 1.3 Continuous Batching</a>
+  <a href="1-5-speculative-decoding.html">1.5 Speculative Decoding →</a>
 </nav>
 
 </div>

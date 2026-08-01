@@ -3,7 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>1.1 token 是什么、为什么中文更贵 · AI 系统工程手册</title>
+<title>1.1 Tokenization 与 Context Window · AI 系统工程手册</title>
+<meta name="description" content="token 是什么、为什么中文更「贵」、context window 的真实成本曲线。">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Noto+Sans+SC:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -20,23 +21,200 @@
 
 <header class="ch">
   <div class="blockrow" aria-hidden="true">
-    <span></span><span></span><span class="f"></span><span class="f"></span><span class="f"></span>
-    <span class="f"></span><span class="f"></span><span class="f"></span><span class="f"></span><span class="f"></span>
+    <span></span><span></span><span></span><span></span><span class="w"></span>
+    <span class="w"></span><span class="w"></span><span class="f"></span><span class="f"></span><span class="f"></span>
   </div>
   <div class="kicker">Part 1 · Inference Fundamentals 推理基础</div>
   <h1>1.1 Tokenization &amp; Context Window
-    <span class="zh">token 是什么、为什么中文更贵</span>
+    <span class="zh">token 是什么、为什么中文更「贵」</span>
   </h1>
+  <div class="meta">
+    <span>难度 <b>★☆☆</b></span>
+    <span>阅读 <b>~14 min</b></span>
+    <span>面试出现频率 <b>中</b></span>
+    <span>前置 <b>无</b></span>
+  </div>
 </header>
 
+<!-- ================= 核心概念 ================= -->
 <section id="concept">
-  <div class="sec-tag"><span class="cell" style="background:var(--free)"></span><span class="lab">Draft 待撰写</span></div>
-  <p>本章尚未撰写。返回<a href="../index.html">全书目录</a>。</p>
+  <div class="sec-tag"><span class="cell"></span><span class="lab">Core Concept 核心概念</span></div>
+  <h2>模型看到的不是文字，是一串整数</h2>
+
+  <p>模型不认识字符。在文本进入模型之前，<span class="term">tokenizer</span>（分词器）先把它切成一串 <span class="term">token</span>（词元），再把每个 token 映射成词表里的整数 ID。模型全部的输入、输出、计费、上下文长度限制，统统以 token 为单位——<b>token 是 LLM 系统里的基本计量单位</b>，就像字节之于存储。</p>
+
+  <p>为什么不直接用字符或单词？两条路都走不通。用<b>单词</b>做词表：词表会爆炸（每个词形变化都是新词），而且永远会遇到词表外的新词（<span class="term">OOV</span>，out-of-vocabulary）——用户打个错字模型就瞎了。用<b>字符</b>：词表很小且没有 OOV，但序列长度暴涨，模型要花很多算力才能理解「一个词」。</p>
+
+  <p><span class="term">BPE</span>（Byte Pair Encoding，字节对编码）是这两者之间的妥协，也是今天主流模型的默认选择。它的训练过程朴素得出奇：从单个字节开始，反复统计语料里最高频的相邻符号对，把它合并成一个新符号，重复几万次，得到一张固定大小的词表。结果是<b>高频内容被压成一个 token，低频内容退化成碎片</b>——常见英文单词占 1 个 token，生僻词被拆成几块，而任何字节序列都能被编码，永远不会 OOV。</p>
+
+  <figure>
+    <svg viewBox="0 0 760 235" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="同一句话在不同语言下的 token 切分对比示意">
+      <text x="20" y="26" class="lbl">同一句话，切出来的 token 数不同</text>
+
+      <text x="20" y="60" class="sub">高频英文：整词即一个 token</text>
+      <g>
+        <rect x="20"  y="70" width="76" height="32" rx="4" fill="var(--alloc)"/><text x="58"  y="91" text-anchor="middle" class="onfill">The</text>
+        <rect x="100" y="70" width="86" height="32" rx="4" fill="var(--alloc)"/><text x="143" y="91" text-anchor="middle" class="onfill">model</text>
+        <rect x="190" y="70" width="76" height="32" rx="4" fill="var(--alloc)"/><text x="228" y="91" text-anchor="middle" class="onfill">reads</text>
+        <rect x="270" y="70" width="72" height="32" rx="4" fill="var(--alloc)"/><text x="306" y="91" text-anchor="middle" class="onfill">text</text>
+        <text x="360" y="91" class="mn">4 tokens</text>
+      </g>
+
+      <text x="20" y="132" class="sub">生僻词 / 专有名词：被拆成碎片</text>
+      <g>
+        <rect x="20"  y="142" width="58" height="32" rx="4" fill="var(--alloc)"/><text x="49"  y="163" text-anchor="middle" class="onfill">Paged</text>
+        <rect x="82"  y="142" width="42" height="32" rx="4" fill="var(--waste)"/><text x="103" y="163" text-anchor="middle" class="onfill">Att</text>
+        <rect x="128" y="142" width="42" height="32" rx="4" fill="var(--waste)"/><text x="149" y="163" text-anchor="middle" class="onfill">ent</text>
+        <rect x="174" y="142" width="42" height="32" rx="4" fill="var(--waste)"/><text x="195" y="163" text-anchor="middle" class="onfill">ion</text>
+        <text x="230" y="163" class="mn">1 个词 → 4 tokens</text>
+      </g>
+
+      <text x="20" y="204" class="sub">中文：常见词可能成词，也可能逐字甚至按字节拆开</text>
+      <g>
+        <rect x="20"  y="212" width="40" height="18" rx="3" fill="var(--alloc)"/>
+        <rect x="64"  y="212" width="40" height="18" rx="3" fill="var(--waste)"/>
+        <rect x="108" y="212" width="40" height="18" rx="3" fill="var(--waste)"/>
+        <rect x="152" y="212" width="40" height="18" rx="3" fill="var(--waste)"/>
+        <rect x="196" y="212" width="40" height="18" rx="3" fill="var(--waste)"/>
+        <rect x="240" y="212" width="40" height="18" rx="3" fill="var(--waste)"/>
+        <text x="296" y="226" class="mn">同样的信息量 → 更多 tokens</text>
+      </g>
+    </svg>
+    <figcaption><b>图 1 · token 切分的不均匀性。</b>蓝色 = 一个完整语义单元占一个 token；橙色 = 被拆碎、需要多个 token 才能表达一个语义单元。具体切法取决于 tokenizer，示意图仅表达「压缩率随内容类型剧烈变化」这一结构性事实。</figcaption>
+  </figure>
+
+  <h3>为什么中文更「贵」</h3>
+  <p>BPE 的合并规则是从<b>训练语料</b>里统计出来的。如果语料以英文为主，那么英文的常见词组会被合并成单个 token，而中文只能拿到较少的合并机会——很多汉字甚至要用多个字节级 token 才能拼出来。同一份内容翻译成不同语言，token 数可以差出好几倍。</p>
+
+  <p>这个差异不是审美问题，它直接换算成三件事：<b>① 成本</b>——按 token 计费，token 多则账单高；<b>② 延迟</b>——输入 token 多则 prefill 慢，输出 token 多则总生成时间长；<b>③ 有效上下文</b>——同样的 128K 窗口，能塞进去的实际内容更少。这就是为什么中文场景下「上下文不够用」和「成本超预算」总是同时发生。</p>
+
+  <div class="callout">
+    <p><b>不要背比例，要去测。</b>「中文 1 个字约等于几个 token」这类经验值随 tokenizer 版本变化很大，新一代模型的多语言 tokenizer 通常明显改善了 CJK 的压缩率。正确做法是<b>用你实际调用的那个模型的 tokenizer 跑一遍你自己的真实语料</b>，得到属于你的比例，再拿它做估算——这个数字应该属于工具层，而不是记在脑子里的常识。</p>
+  </div>
+
+  <h3>Context window 的成本不是线性的</h3>
+  <p><span class="term">context window</span>（上下文窗口）是模型单次能处理的最大 token 数。它常被理解成一个简单的容量上限，但真正影响工程决策的是——<b>把窗口填满的代价随长度增长得比线性更快</b>。</p>
+
+  <p>推理分两个阶段。<span class="term">prefill</span>（预填充）一次性处理全部输入 token，其中 self-attention 需要计算 token 两两之间的关系，计算量随输入长度呈<b>二次方</b>增长；<span class="term">decode</span>（解码）逐个吐出输出 token，每步只算一个新 token，但要读取全部已有的 KV cache，而 KV cache 随长度<b>线性</b>增长（见 <a href="1-2-kv-cache.html">1.2</a>）。</p>
+
+  <div class="formula">prefill 计算量 ≈ O(n²)　（n = 输入 token 数，attention 部分）<br>KV cache 显存 ≈ O(n)<br><br>→ 输入翻倍：首字延迟（TTFT）涨幅通常明显超过 2 倍<br>→ 输入翻倍：能同时服务的并发数大致减半</div>
+
+  <figure>
+    <svg viewBox="0 0 760 250" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="输入长度与 prefill 计算量、KV cache 显存的增长曲线对比">
+      <line x1="70" y1="200" x2="700" y2="200" stroke="var(--line)" stroke-width="2"/>
+      <line x1="70" y1="200" x2="70" y2="30" stroke="var(--line)" stroke-width="2"/>
+      <text x="600" y="224" class="sub">输入长度 n →</text>
+      <text x="20" y="26" class="sub">代价</text>
+
+      <!-- linear line -->
+      <path d="M70 200 L700 130" fill="none" stroke="var(--free)" stroke-width="3"/>
+      <text x="600" y="118" class="mn">KV cache 显存 ~ O(n)</text>
+
+      <!-- quadratic curve -->
+      <path d="M70 200 Q 460 190 700 40" fill="none" stroke="var(--waste)" stroke-width="3"/>
+      <text x="520" y="60" class="mn" fill="var(--waste)">prefill 计算 ~ O(n²)</text>
+
+      <!-- markers -->
+      <line x1="280" y1="200" x2="280" y2="186" stroke="var(--line)" stroke-width="2"/>
+      <text x="280" y="220" text-anchor="middle" class="mn">4K</text>
+      <line x1="490" y1="200" x2="490" y2="186" stroke="var(--line)" stroke-width="2"/>
+      <text x="490" y="220" text-anchor="middle" class="mn">32K</text>
+      <line x1="700" y1="200" x2="700" y2="186" stroke="var(--line)" stroke-width="2"/>
+      <text x="700" y="220" text-anchor="middle" class="mn">128K</text>
+    </svg>
+    <figcaption><b>图 2 · 两条不同斜率的成本曲线。</b>示意图，非实测数据——真实曲线还受 FlashAttention 等 kernel 优化、prefix caching 命中率影响，但<b>两条曲线增速不同</b>这一结构不变：长上下文先撞上的是延迟墙，不是显存墙。</figcaption>
+  </figure>
+
+  <p>还有一件容易被忽略的事：<b>窗口大不等于全窗口都好用</b>。模型在超长上下文中定位关键信息的能力会随位置和长度衰减，这个现象在 <a href="3-4-rag-vs-long-context.html">3.4 节</a> 详谈。所以「窗口够大就把所有资料都塞进去」既贵、又慢、还可能更差。</p>
+</section>
+
+<!-- ================= 案例 ================= -->
+<section id="case">
+  <div class="sec-tag"><span class="cell" style="background:var(--waste)"></span><span class="lab">Case Study 真实案例</span></div>
+  <h2>tokenizer 的语言不公平性有多大</h2>
+
+  <div class="case">
+    <div class="case-head"><span class="cell"></span>Language Model Tokenizers Introduce Unfairness Between Languages (NeurIPS 2023)</div>
+    <div class="case-body">
+      <p>Petrov 等人系统性地测量了同一段内容翻译成不同语言后的 token 数差异。结论比大多数人的直觉更极端：</p>
+      <div class="stats">
+        <div class="stat"><div class="n bad">最高 15×</div><div class="l">同一内容在不同语言间的 token 数差异</div></div>
+        <div class="stat"><div class="n bad">&gt; 4×</div><div class="l">即使字符级 / 字节级模型，部分语言对仍有此差距</div></div>
+        <div class="stat"><div class="n">持续存在</div><div class="l">专门为多语言训练的 tokenizer 也未消除差异</div></div>
+      </div>
+      <p>论文指出这种差异会直接传导为三重不平等：<b>访问商业模型服务的成本</b>、<b>处理时间与延迟</b>，以及<b>能塞进上下文的内容量</b>——恰好就是上文那三件事。对工程决策的启示很直接：如果你的产品服务多语言用户，<b>成本模型和上下文预算必须按语言分别测算</b>，用英文语料估出来的单位成本会系统性地低估非英语场景。</p>
+      <div class="src">来源：Petrov, La Malfa, Torr, Bibi, "Language Model Tokenizers Introduce Unfairness Between Languages", NeurIPS 2023. 数字引自论文摘要与项目页；本书未复现实验。</div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 工具层 ================= -->
+<section id="tools">
+  <div class="sec-tag"><span class="cell" style="background:var(--free)"></span><span class="lab">Tooling Sidebar 工具层</span></div>
+  <div class="toolbox">
+    <div class="toolbox-head">
+      <span class="t">怎么真的数清楚 token（会过期，正文不依赖本区块）</span>
+      <span class="date">截至 2026-08</span>
+    </div>
+    <div class="toolbox-body">
+      <p><b>先确认 tokenizer 版本</b>：同一家厂商不同代际的模型 tokenizer 可能不同，跨厂商更是完全不同。永远用<b>你实际要调用的那个模型</b>的 tokenizer 计数，不要用别家的结果外推。</p>
+      <p><b>开源模型</b>：<code>transformers</code> 的 <code>AutoTokenizer.from_pretrained(...)</code> 直接加载模型自带 tokenizer，<code>len(tok.encode(text))</code> 即 token 数，这是最可靠的口径。</p>
+      <p><b>商业 API</b>：优先使用厂商官方提供的计数接口或官方 tokenizer 库（如 OpenAI 的 <code>tiktoken</code>）；部分厂商提供 count-tokens 端点，可在发请求前精确计费预估。<b>不要用「字数 ÷ 4」这类经验公式做正式的成本核算</b>，只能用于量级判断。</p>
+      <p><b>建立你自己的基线</b>：拿 1000 条真实线上语料跑一遍，记录 token/字符 比值、P50 与 P95 输入长度。这三个数是 <a href="2-4-capacity-planning.html">2.4 容量规划</a> 的直接输入，值得固化成一个定期重跑的脚本。</p>
+    </div>
+  </div>
+</section>
+
+<!-- ================= Quiz ================= -->
+<section id="quiz">
+  <div class="sec-tag"><span class="cell"></span><span class="lab">Quiz 自测</span></div>
+  <h2>章末自测</h2>
+  <div class="quiz">
+
+    <details>
+      <summary><span class="qtype">估算题</span>一个中文客服系统：system prompt 800 字，每轮用户输入约 60 字，模型回复约 200 字，平均对话 6 轮。不开任何缓存，估算单次完整对话消耗的 token 量级。</summary>
+      <div class="answer">
+        <p><b>先声明假设</b>（这一步比算术重要）：设中文 1 字 ≈ 1.3 token——<b>这个数必须用你实际模型的 tokenizer 实测得到</b>，此处仅为演示。</p>
+        <p>关键陷阱是<b>多轮对话的输入是累积的</b>：第 k 轮的输入 = system prompt + 前 k−1 轮的全部问答 + 本轮提问。</p>
+        <p>system ≈ 800 × 1.3 ≈ 1040 token；每轮新增 ≈ (60 + 200) × 1.3 ≈ 338 token。<br>第 k 轮输入 ≈ 1040 + 338 × (k−1) + 78。6 轮输入合计 ≈ 6×1040 + 338×(0+1+2+3+4+5) + 6×78 ≈ 6240 + 5070 + 468 ≈ <b>11,800 输入 token</b>；输出合计 ≈ 6 × 260 × 1.3 ≈ <b>2,030 输出 token</b>。</p>
+        <p><b>值得记住的结论</b>：输入 token 是输出的 5 倍以上，且其中 6240 是同一段 system prompt 被重复计费了 6 次。这正是 <a href="2-2-prompt-caching.html">2.2 Prompt Caching</a> 存在的理由——多轮对话场景里，前缀缓存能命中的部分恰好是占比最大的那部分。</p>
+      </div>
+    </details>
+
+    <details>
+      <summary><span class="qtype">概念题</span>为什么模型经常数不清一个单词里有几个字母、也算不好两个数字的大小比较？</summary>
+      <div class="answer">
+        <p>因为模型看到的不是字母，是 token。一个单词可能整体是<b>一个</b> token，模型内部并没有「这个 token 由哪些字符组成」的显式结构——要回答字母级问题，它得从训练数据中间接学到拼写知识，这远不如直接看字符可靠。</p>
+        <p>数字同理：多位数字的切分方式取决于 tokenizer，同一个数值在不同上下文里可能被切成不同的 token 组合，位值对齐关系因此被破坏。<b>工程启示</b>：字符级操作（计数、反转、精确截断）和精确算术应该交给代码工具做，而不是交给模型（见 <a href="4-1-tool-use.html">4.1 Tool Use</a>）。</p>
+      </div>
+    </details>
+
+    <details>
+      <summary><span class="qtype">场景判断</span>产品要支持中英双语。团队按英文语料测出「平均每次请求 500 token」并据此做了成本预算和限流阈值。上线后中文用户占多数，会发生什么？</summary>
+      <div class="answer">
+        <p>三件事同时发生，而且它们看起来像三个不相关的故障：</p>
+        <p><b>① 成本超预算</b>——中文相同信息量需要更多 token，实际单请求成本高于预估。<b>② 延迟变差</b>——输入更长，prefill 计算量按二次方增长，TTFT 涨幅超过 token 数涨幅。<b>③ 截断 bug</b>——如果限流或截断阈值是按 token 数设的，中文用户会在「更少的实际内容」处就被截断，表现为「中文回答莫名其妙断掉」。</p>
+        <p>修法不是把阈值调大了事，而是<b>按语言分别建立成本与长度基线</b>，并把截断逻辑改成基于语义边界而非固定 token 数。</p>
+      </div>
+    </details>
+
+    <details>
+      <summary><span class="qtype">面试题改编</span>「上下文窗口从 8K 扩到 128K，是不是就不用做 RAG 了？」</summary>
+      <div class="answer">
+        <p>这是一道考察成本意识的题，标准答案是<b>「窗口是能力上限，不是使用建议」</b>。三个层面：</p>
+        <p><b>成本层面</b>：塞满 128K 的每一次调用都要为全部输入 token 付费和付延迟，而 prefill 的 attention 计算量随长度二次增长；RAG 只把相关的几千 token 送进去，成本差出一到两个数量级。</p>
+        <p><b>质量层面</b>：塞进去 ≠ 用得上，长上下文中的信息定位能力会衰减，无关内容还会形成干扰（详见 <a href="3-4-rag-vs-long-context.html">3.4</a>）。</p>
+        <p><b>架构层面</b>：知识库通常远大于任何窗口，且需要增量更新、权限过滤、引用溯源——这些是检索层的职责，不会因为窗口变大而消失。</p>
+        <p>但也要给出长上下文<b>确实更优</b>的场景：单份文档需要全局理解（如整篇合同的一致性审查）、文档量小且固定、或对首次接入速度的要求高于成本——这时切分与检索反而是自找麻烦。</p>
+      </div>
+    </details>
+
+  </div>
 </section>
 
 <nav class="next">
-  <a href="0-1-how-to-read.html">← 0 怎么读这本书</a>
-  <a href="1-2-kv-cache.html">1.2 键值缓存，与像操作系统一样管理显存 →</a>
+  <a href="0-1-how-to-read.html">← Part 0 导读</a>
+  <a href="1-2-kv-cache.html">1.2 KV Cache 与 PagedAttention →</a>
 </nav>
 
 </div>

@@ -3,7 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>1.3 连续批处理：吞吐提升从哪来 · AI 系统工程手册</title>
+<title>1.3 Continuous Batching · AI 系统工程手册</title>
+<meta name="description" content="static batching 与 continuous batching 的区别，吞吐提升到底来自哪里。">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Noto+Sans+SC:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -20,23 +21,185 @@
 
 <header class="ch">
   <div class="blockrow" aria-hidden="true">
-    <span></span><span></span><span class="f"></span><span class="f"></span><span class="f"></span>
-    <span class="f"></span><span class="f"></span><span class="f"></span><span class="f"></span><span class="f"></span>
+    <span></span><span></span><span></span><span></span><span></span><span></span><span></span>
+    <span class="w"></span><span class="w"></span><span class="f"></span>
   </div>
   <div class="kicker">Part 1 · Inference Fundamentals 推理基础</div>
   <h1>1.3 Continuous Batching
     <span class="zh">连续批处理：吞吐提升从哪来</span>
   </h1>
+  <div class="meta">
+    <span>难度 <b>★★☆</b></span>
+    <span>阅读 <b>~13 min</b></span>
+    <span>面试出现频率 <b>高</b></span>
+    <span>前置 <b>1.2 KV Cache</b></span>
+  </div>
 </header>
 
+<!-- ================= 核心概念 ================= -->
 <section id="concept">
-  <div class="sec-tag"><span class="cell" style="background:var(--free)"></span><span class="lab">Draft 待撰写</span></div>
-  <p>本章尚未撰写。返回<a href="../index.html">全书目录</a>。</p>
+  <div class="sec-tag"><span class="cell"></span><span class="lab">Core Concept 核心概念</span></div>
+  <h2>为什么必须批处理</h2>
+
+  <p>GPU 擅长的是大规模并行计算，但自回归解码每一步只算<b>一个</b> token——这时瓶颈完全不在算力，而在<span class="term">memory bandwidth</span>（显存带宽）：为了算这一个 token，要把整个模型的权重从显存读进计算单元一遍。读几十 GB 权重、只做一个 token 的计算，GPU 的算力单元大部分时间在等数据。</p>
+
+  <p>批处理正是针对这个结构：<b>权重只读一遍，同时为 batch 里的所有序列各算一个 token</b>。读权重的成本被摊薄到整批请求上。这就是为什么在解码阶段，把 batch size 从 1 提到 32，吞吐几乎线性上升而单请求延迟只略微变差——你在填满本来就空转的算力。</p>
+
+  <h3>Static batching：被最长的那条请求绑架</h3>
+  <p>最朴素的做法叫 <span class="term">static batching</span>（静态批处理，也叫 request-level scheduling）：攒够一批请求，一起送进去，<b>等整批全部生成完毕</b>，再取回结果、接下一批。问题出在 LLM 的一个特性上——<b>你事先不知道每条请求要生成多少个 token</b>。</p>
+
+  <p>于是必然发生这件事：批里有的请求生成 20 个 token 就结束了，有的要生成 800 个。先结束的那些请求，它们在批中的槽位<b>并不会被释放</b>，只能陪着最长的那条一直空转到最后。批越大、长度方差越大，浪费越严重。更糟的是，排队中的新请求必须等整批做完才能开始，<b>队首阻塞</b>（head-of-line blocking）直接推高了 P99 延迟。</p>
+
+  <figure>
+    <svg viewBox="0 0 760 300" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="static batching 与 continuous batching 的时间线对比">
+      <text x="20" y="24" class="lbl">Static batching — 槽位被最长请求锁死</text>
+      <text x="20" y="44" class="sub">横轴 = 时间（每格 = 一次 forward 迭代）</text>
+
+      <!-- static rows -->
+      <text x="20" y="72" class="mn">Req A</text>
+      <g>
+        <rect x="80"  y="58" width="150" height="18" rx="3" fill="var(--alloc)"/>
+        <rect x="230" y="58" width="330" height="18" rx="3" fill="var(--waste)"/>
+      </g>
+      <text x="240" y="72" class="onfill">槽位空转（已完成，但不能释放）</text>
+
+      <text x="20" y="100" class="mn">Req B</text>
+      <g>
+        <rect x="80"  y="86" width="480" height="18" rx="3" fill="var(--alloc)"/>
+      </g>
+      <text x="90" y="100" class="onfill">最长的请求决定整批何时结束</text>
+
+      <text x="20" y="128" class="mn">Req C</text>
+      <g>
+        <rect x="80"  y="114" width="90" height="18" rx="3" fill="var(--alloc)"/>
+        <rect x="170" y="114" width="390" height="18" rx="3" fill="var(--waste)"/>
+      </g>
+
+      <text x="20" y="156" class="mn">Req D</text>
+      <g>
+        <rect x="80"  y="142" width="480" height="18" rx="3" fill="var(--free)"/>
+      </g>
+      <text x="90" y="156" class="mn">在队列里等待 —— 队首阻塞</text>
+      <line x1="560" y1="50" x2="560" y2="166" stroke="var(--ink)" stroke-width="2" stroke-dasharray="4 3"/>
+      <text x="568" y="112" class="mn">整批结束</text>
+
+      <text x="20" y="206" class="lbl">Continuous batching — 迭代粒度调度</text>
+      <text x="20" y="232" class="mn">Req A</text>
+      <rect x="80" y="218" width="150" height="18" rx="3" fill="var(--alloc)"/>
+      <rect x="230" y="218" width="150" height="18" rx="3" fill="var(--alloc-soft)" stroke="var(--alloc)"/>
+      <text x="240" y="232" class="mn">A 结束 → 槽位立刻给 D</text>
+
+      <text x="20" y="260" class="mn">Req B</text>
+      <rect x="80" y="246" width="480" height="18" rx="3" fill="var(--alloc)"/>
+
+      <text x="20" y="288" class="mn">Req C</text>
+      <rect x="80"  y="274" width="90" height="18" rx="3" fill="var(--alloc)"/>
+      <rect x="170" y="274" width="260" height="18" rx="3" fill="var(--alloc-soft)" stroke="var(--alloc)"/>
+      <text x="180" y="288" class="mn">C 结束 → 新请求 E 补位</text>
+    </svg>
+    <figcaption><b>图 1 · 两种调度粒度的对比。</b>上：静态批处理，橙色为已完成却无法释放的空转槽位。下：连续批处理，每次迭代后重新组批，浅蓝格为腾出后立刻被新请求占用的槽位。<b>提升不来自算得更快，而来自不再空转。</b></figcaption>
+  </figure>
+
+  <h3>Continuous batching：把调度粒度从「请求」降到「迭代」</h3>
+  <p><span class="term">continuous batching</span>（连续批处理，论文中称 <span class="term">iteration-level scheduling</span>，迭代级调度）的改动只有一句话：<b>调度器不再以「一个请求」为单位，而是以「一次 forward 迭代」为单位</b>。每完成一次迭代，调度器就重新审视当前批次——已经生成完 <code>EOS</code> 的序列立即离场并归还资源，等待队列里的新请求马上补进来。</p>
+
+  <p>这个改动之所以能落地，还需要解决一个技术障碍。批处理要求张量形状一致，但批里各条序列的长度各不相同，attention 的计算无法简单地堆在一起。Orca 的答案是 <span class="term">selective batching</span>（选择性批处理）：<b>只对与序列长度无关的算子做批处理</b>（线性层、LayerNorm 等——它们逐 token 独立计算），而 attention 部分按序列单独处理。这样批处理的收益（摊薄权重读取）几乎全部保留，同时允许批内序列长度自由不同。</p>
+
+  <p>连续批处理和 <a href="1-2-kv-cache.html">1.2 的 PagedAttention</a> 是天生一对：迭代级调度让请求频繁地进出批次，如果显存仍按最坏情况连续预分配，腾出的槽位根本没法被灵活复用。分页负责「显存能随时按需分配和归还」，连续批处理负责「一有空位就立刻填上」——两者叠加才是现代推理框架的默认形态。</p>
+
+  <h3>代价：prefill 会打断 decode</h3>
+  <p>连续批处理不是免费的。新请求加入时要做 <span class="term">prefill</span>（一次性处理它的全部输入 token），这是一个计算量大得多的操作。当它和其他请求的 decode 步骤挤在同一次迭代里，<b>批内所有正在解码的请求都会被拖慢</b>——用户看到的是「输出突然卡顿一下」。</p>
+
+  <p>这就是 <a href="2-1-latency-metrics.html">2.1 节</a> 要讲的 TTFT 与 TPOT 之间的张力：优先安排 prefill，新请求首字更快、老请求吐字变卡；优先保护 decode，反之。业界常见的折中是 <span class="term">chunked prefill</span>（分块预填充）——把长 prefill 切成小块，分摊到多次迭代中，用少量 TTFT 换取平稳的 TPOT。<b>没有哪个选择是对的，只有和你的 SLA 匹配的选择。</b></p>
+</section>
+
+<!-- ================= 案例 ================= -->
+<section id="case">
+  <div class="sec-tag"><span class="cell" style="background:var(--waste)"></span><span class="lab">Case Study 真实案例</span></div>
+  <h2>Orca：调度粒度换来的数量级提升</h2>
+
+  <div class="case">
+    <div class="case-head"><span class="cell"></span>Orca: A Distributed Serving System for Transformer-Based Generative Models (OSDI 2022)</div>
+    <div class="case-body">
+      <p>首尔大学与 FriendliAI 团队提出迭代级调度 + 选择性批处理，并与当时的主流实现 NVIDIA FasterTransformer 做了对比。在 GPT-3 175B 模型上：</p>
+      <div class="stats">
+        <div class="stat"><div class="n good">36.9×</div><div class="l">同等延迟水平下的吞吐提升</div></div>
+        <div class="stat"><div class="n bad">0.185 req/s</div><div class="l">FasterTransformer @ 190ms 延迟</div></div>
+        <div class="stat"><div class="n good">6.81 req/s</div><div class="l">Orca @ 同一 190ms 延迟</div></div>
+      </div>
+      <p><b>务必连同条件一起记住这个数字</b>：它是「把延迟固定在 190ms 这一水平时，两者各能做到多少吞吐」的比值，在 GPT-3 175B 这一特定模型上测得，基线是 2022 年的 FasterTransformer。换一个模型规模、换一个延迟目标、换一份请求长度分布，倍数就完全不同——真正可迁移的结论不是「36.9 倍」，而是<b>「当请求的生成长度高度不均时，调度粒度的浪费可以大到一个数量级」</b>。</p>
+      <p>今天几乎所有主流推理框架都默认开启连续批处理，所以这个提升对你多半已经内建在框架里了。它的现实意义在别处：<b>如果你自己写推理循环、或用一个只做 static batching 的老框架，你可能正在把一个数量级的吞吐扔在地上。</b></p>
+      <div class="src">来源：Yu, Jeong, Kim, Kim, Chun, "Orca: A Distributed Serving System for Transformer-Based Generative Models", OSDI 2022. 数字引自论文评测（GPT-3 175B，与 FasterTransformer 对比）；示意图为本书重绘。</div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 工具层 ================= -->
+<section id="tools">
+  <div class="sec-tag"><span class="cell" style="background:var(--free)"></span><span class="lab">Tooling Sidebar 工具层</span></div>
+  <div class="toolbox">
+    <div class="toolbox-head">
+      <span class="t">批处理相关的常见旋钮（会过期，正文不依赖本区块）</span>
+      <span class="date">截至 2026-08</span>
+    </div>
+    <div class="toolbox-body">
+      <p><b>默认已开启</b>：vLLM、SGLang、TGI、TensorRT-LLM 均默认使用连续批处理，无需手动开关。你要调的是它的边界参数。</p>
+      <p><b>vLLM</b>：<code>--max-num-seqs</code> 限制批内最大并发序列数；<code>--max-num-batched-tokens</code> 限制单次迭代的 token 预算（同时影响 prefill 切块大小）。前者控并发，后者控单次迭代的耗时上限，是 TTFT/TPOT 平衡的主要手柄。</p>
+      <p><b>chunked prefill</b>：vLLM 等框架已支持并在多数版本中默认启用，用于抑制长 prefill 对解码流畅度的冲击；其思想来自 Sarathi / Sarathi-Serve 的工作。若你的场景是长输入 + 流式输出，这是首先要确认已打开的选项。</p>
+      <p><b>压测要点</b>：只测平均吞吐会掩盖问题。至少要用<b>真实的长度分布</b>压测，并同时观察 TTFT 与 TPOT 的 P50/P99——连续批处理的收益恰恰体现在长度方差大的负载上，用等长请求压测会得到误导性的结论。</p>
+    </div>
+  </div>
+</section>
+
+<!-- ================= Quiz ================= -->
+<section id="quiz">
+  <div class="sec-tag"><span class="cell"></span><span class="lab">Quiz 自测</span></div>
+  <h2>章末自测</h2>
+  <div class="quiz">
+
+    <details>
+      <summary><span class="qtype">估算题</span>batch=8 的静态批处理，8 条请求的生成长度分别是 30、40、50、60、700、80、90、100 个 token。有多少比例的「槽位×迭代」是空转的？</summary>
+      <div class="answer">
+        <p>整批的持续时间由最长的那条决定 = <b>700 次迭代</b>。总槽位×迭代 = 8 × 700 = 5600。</p>
+        <p>实际有效 = 30+40+50+60+700+80+90+100 = <b>1150</b>。</p>
+        <p>空转比例 = 1 − 1150/5600 ≈ <b>79.5%</b>。也就是说近八成的计算槽位在陪跑。</p>
+        <p><b>这道题的意义</b>：注意浪费几乎完全由那一条 700 token 的长尾请求造成。这解释了为什么「聊天服务」（长度方差极大）是连续批处理收益最大的场景，而「固定长度的批量分类任务」几乎没有收益——和 <a href="1-2-kv-cache.html#quiz">1.2 的判断模式</a>一模一样：不确定性越大，按需调度的价值越高。</p>
+      </div>
+    </details>
+
+    <details>
+      <summary><span class="qtype">概念题</span>为什么解码阶段增大 batch size 能几乎线性提升吞吐，而且单请求延迟只轻微变差？这个规律什么时候失效？</summary>
+      <div class="answer">
+        <p>因为解码是 <b>memory-bandwidth-bound</b>（受显存带宽限制）而非 compute-bound。每一步都要把全部模型权重读一遍，这个成本与 batch 大小无关；批内每条序列的实际计算量很小，GPU 算力有大量余量。所以增加 batch 基本只是「让同一次权重读取服务更多请求」，吞吐涨、单请求延迟几乎不变。</p>
+        <p><b>失效的两个边界</b>：① <b>显存墙</b>——batch 越大，KV cache 占用越多（<a href="1-2-kv-cache.html">1.2</a>），撞到显存上限就再也加不上去；② <b>转为算力受限</b>——batch 足够大后，计算量累积到能吃满算力单元，此时继续加 batch，延迟开始明显上升，吞吐增长趋于平坦。真实系统几乎总是先撞上①。</p>
+      </div>
+    </details>
+
+    <details>
+      <summary><span class="qtype">场景判断</span>某服务上线后用户反馈「回答有时会卡顿一下再继续吐字」，但平均吞吐指标很漂亮。最可能的原因是什么？怎么验证？</summary>
+      <div class="answer">
+        <p>最可能是 <b>prefill 打断 decode</b>：有长输入的新请求加入批次时，其 prefill 计算量远大于一次 decode 迭代，导致批内所有正在流式输出的请求在那一次迭代上被拖慢，用户观感就是「卡一下」。平均吞吐看不出来，因为总 token 数没变。</p>
+        <p><b>验证方法</b>：不要看平均值，看 <b>TPOT 的分布</b>（token 间隔时间的 P99 / 最大值），并把它与新请求到达、输入长度做时间对齐。如果卡顿时刻总是与长输入请求入批重合，即可确认。</p>
+        <p><b>缓解</b>：开启 chunked prefill 把长 prefill 切块摊平；或对超长输入请求做单独的队列 / 实例隔离，避免它们污染交互式流量。这是典型的用一点 TTFT 换 TPOT 平稳性的取舍（见 <a href="2-1-latency-metrics.html">2.1</a>）。</p>
+      </div>
+    </details>
+
+    <details>
+      <summary><span class="qtype">面试题改编</span>连续批处理和 PagedAttention 分别解决什么问题？只做其中一个会怎样？</summary>
+      <div class="answer">
+        <p><b>正交但互补</b>：连续批处理解决<b>时间维度</b>的浪费——槽位被已完成的请求占着空转；PagedAttention 解决<b>空间维度</b>的浪费——显存被按最坏情况预留却装不下数据。</p>
+        <p><b>只做连续批处理</b>：调度器想让新请求立刻补位，但每条请求仍需一段按最大长度预留的连续显存，能同时驻留的序列数被死死限制住，「有空位也塞不进来」，收益大打折扣。</p>
+        <p><b>只做分页</b>：显存利用率上去了，能同时驻留更多序列，但整批仍要等最长的请求结束才能换人，腾出来的显存没有调度机制去及时使用。</p>
+        <p>所以现代框架必然两者同时具备。面试时能说清「一个管时间、一个管空间，且互为前提」，就已经答到点子上了。</p>
+      </div>
+    </details>
+
+  </div>
 </section>
 
 <nav class="next">
-  <a href="1-2-kv-cache.html">← 1.2 键值缓存，与像操作系统一样管理显存</a>
-  <a href="1-4-quantization.html">1.4 量化：质量、显存与速度的三角 →</a>
+  <a href="1-2-kv-cache.html">← 1.2 KV Cache 与 PagedAttention</a>
+  <a href="1-4-quantization.html">1.4 量化 Quantization →</a>
 </nav>
 
 </div>

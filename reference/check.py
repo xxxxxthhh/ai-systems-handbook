@@ -30,11 +30,15 @@ def check_chapter(path, name):
         stubs.append(name)
         return
 
+    # Part 0 是导读而非正式章节，不适用四要素与锚点约定
+    guide = name.startswith("0-")
+
     # 章节四要素
     if "<figure" not in html:
         err(name, "缺少 <figure> 原创图表")
     if 'class="quiz"' not in html:
-        err(name, "缺少 quiz 区块")
+        if not guide:
+            err(name, "缺少 quiz 区块")
     else:
         n_q = html.count("<details>")
         if n_q < 3:
@@ -44,21 +48,23 @@ def check_chapter(path, name):
         if html.count("<details>") != html.count('class="answer"'):
             err(name, "有 quiz 题目缺少参考答案")
     if 'class="case"' not in html:
-        err(name, "缺少真实案例区块 .case")
+        if not guide:
+            err(name, "缺少真实案例区块 .case")
     elif 'class="src"' not in html:
         err(name, "案例缺少来源标注 .src")
 
-    # 五个锚点 id（glossary 依赖）
-    for sid in SECTION_IDS:
-        if 'id="{}"'.format(sid) not in html:
-            err(name, '缺少锚点 id="{}"'.format(sid))
+    # 锚点 id（glossary 的首次出现链接依赖它们）
+    if not guide:
+        for sid in SECTION_IDS:
+            if 'id="{}"'.format(sid) not in html:
+                err(name, '缺少锚点 id="{}"'.format(sid))
 
     # 工具层必须有截至日期
     n_tool = html.count('class="toolbox"')
     n_date = html.count('class="date"')
     if n_tool != n_date:
         err(name, "工具层区块 {} 个但日期戳 {} 个".format(n_tool, n_date))
-    if n_tool == 0:
+    if n_tool == 0 and not guide:
         warnings.append("{}: 没有工具层侧栏".format(name))
 
     # 共享资源引用

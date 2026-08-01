@@ -3,7 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>0 怎么读这本书 · AI 系统工程手册</title>
+<title>Part 0 导读 · AI 系统工程手册</title>
+<meta name="description" content="这本书写给谁、原理层与工具层的阅读方法、全书贯穿案例预告。">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Noto+Sans+SC:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -20,23 +21,137 @@
 
 <header class="ch">
   <div class="blockrow" aria-hidden="true">
-    <span></span><span></span><span class="f"></span><span class="f"></span><span class="f"></span>
-    <span class="f"></span><span class="f"></span><span class="f"></span><span class="f"></span><span class="f"></span>
+    <span></span><span></span><span></span><span></span><span></span>
+    <span class="w"></span><span class="w"></span><span class="f"></span><span class="f"></span><span class="f"></span>
   </div>
   <div class="kicker">Part 0 · Reading Guide 导读</div>
-  <h1>0 How to Read This Book
+  <h1>How to Read This Book
     <span class="zh">怎么读这本书</span>
   </h1>
+  <div class="meta">
+    <span>阅读 <b>~8 min</b></span>
+    <span>建议 <b>先读本章</b></span>
+  </div>
 </header>
 
-<section id="concept">
-  <div class="sec-tag"><span class="cell" style="background:var(--free)"></span><span class="lab">Draft 待撰写</span></div>
-  <p>本章尚未撰写。返回<a href="../index.html">全书目录</a>。</p>
+<!-- ================= 0.1 ================= -->
+<section id="s01">
+  <div class="sec-tag"><span class="cell"></span><span class="lab">0.1 · Audience 读者定位</span></div>
+  <h2>这本书写给谁、不写给谁</h2>
+
+  <p>这本书写给<b>应用层 AI 工程师</b>——你的工作是把大模型接进真实系统：调 API 或自托管模型、设计检索、搭 agent、控制成本、在半夜被 on-call 叫醒。你需要知道模型底下发生了什么，但你不需要自己写 CUDA kernel，也不打算从零预训练一个基座模型。</p>
+
+  <p>因此，本书<b>不写</b>这些内容：Transformer 架构的逐层数学推导、预训练的分布式并行策略、CUDA kernel 优化、模型架构创新的研究前沿。这些是好东西，但它们属于另一本书；把它们塞进来只会稀释你真正每天要做的决策。</p>
+
+  <p>本书想让你获得的是<b>判断力</b>而不是操作手册：面对一个需求，能判断瓶颈在哪、该动哪个旋钮、什么方案是过度设计、成本会落在什么量级。所以每一章都围绕同一组问题展开——<b>这个东西为什么存在？它解决了什么问题？什么时候它不是答案？</b></p>
+
+  <div class="callout">
+    <p><b>前置知识。</b>假设你知道什么是 Transformer 和 attention（概念层面即可）、写过调用 LLM API 的代码、了解基本的服务端工程概念（延迟、吞吐、缓存、队列）。不假设你读过任何一篇本书引用的论文。</p>
+  </div>
+</section>
+
+<!-- ================= 0.2 ================= -->
+<section id="s02">
+  <div class="sec-tag"><span class="cell" style="background:var(--free)"></span><span class="lab">0.2 · Knowledge Layering 知识分层</span></div>
+  <h2>原理层 vs 工具层：本书最重要的约定</h2>
+
+  <p>AI 工程的知识有一个恼人的特点：<b>它过期得非常快</b>。今天记住的最佳实践，明年可能连工具名都换了。但并非所有知识都以同样的速度腐坏——把它们混在一起写，是大多数技术文档很快失去价值的原因。</p>
+
+  <p>所以本书把每一条知识按一个简单的问题分层：</p>
+
+  <div class="formula"><b>18 个月测试</b>：这句话在 18 个月后还成立吗？<br><br>成立 → <b>原理层</b>，写进正文<br>不成立 → <b>工具层</b>，放进虚线框侧栏或附录 A，并标注「截至 YYYY-MM」</div>
+
+  <figure>
+    <svg viewBox="0 0 760 250" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="原理层与工具层的知识分层与半衰期对比">
+      <text x="60" y="40" class="lbl">同一个话题，两层写法不同</text>
+      <rect x="60" y="54" width="270" height="66" rx="6" fill="var(--waste-soft)" stroke="var(--waste)"/>
+      <text x="76" y="76" class="mn">「--gpu-memory-utilization</text>
+      <text x="76" y="93" class="mn">  默认 0.9，OOM 时调低」</text>
+      <text x="76" y="111" class="sub">→ 侧栏，标注截至日期</text>
+
+      <rect x="360" y="54" width="360" height="66" rx="6" fill="var(--alloc-soft)" stroke="var(--alloc)"/>
+      <text x="376" y="76" class="mn">「KV cache 随并发与序列长度线性增长，</text>
+      <text x="376" y="93" class="mn">  所以显存预算决定并发上限」</text>
+      <text x="376" y="111" class="sub">→ 正文，换个框架依然成立</text>
+
+      <!-- axis -->
+      <line x1="60" y1="212" x2="720" y2="212" stroke="var(--line)" stroke-width="2"/>
+      <text x="60" y="236" class="sub">知识半衰期 →</text>
+
+      <rect x="60" y="158" width="230" height="44" rx="6" fill="var(--waste)"/>
+      <text x="76" y="177" class="onfill">工具层 Tooling</text>
+      <text x="76" y="194" class="onfill">版本 · 参数 · 价格 · 工具名</text>
+      <text x="60" y="150" class="mn">腐坏快</text>
+
+      <rect x="330" y="158" width="390" height="44" rx="6" fill="var(--alloc)"/>
+      <text x="346" y="177" class="onfill">原理层 Principles</text>
+      <text x="346" y="194" class="onfill">为什么存在 · 取舍结构 · 失败模式</text>
+      <text x="330" y="150" class="mn">腐坏慢</text>
+    </svg>
+    <figcaption><b>图 1 · 知识分层。</b>两层不是「重要」与「不重要」的区别，而是<b>腐坏速度</b>的区别。工具层解决你今天的问题，原理层决定你三年后还能不能判断新工具好不好。</figcaption>
+  </figure>
+
+  <h3>这对你的阅读方式意味着什么</h3>
+  <p>看到<b>虚线框</b>（右上角带「截至 YYYY-MM」日期戳）时，请把它当作一份会过期的快照——正文的论证<b>从不依赖侧栏内容</b>，你完全可以跳过全部侧栏读完整本书而不损失任何逻辑。反过来，如果你正在解决一个具体问题，侧栏和<a href="../appendix-a-tooling.html">附录 A</a> 才是你要找的地方。</p>
+
+  <p>这个分层还有一个实际好处：本书更新时，绝大部分改动集中在侧栏和附录 A，正文可以长期稳定。如果你读到某个侧栏的日期戳已经很旧，请默认它已经过期——<b>日期戳存在的意义就是让你有理由怀疑它</b>。</p>
+
+  <h3>每章的固定结构</h3>
+  <div class="tbl-scroll">
+  <table>
+    <thead><tr><th>区块</th><th>作用</th></tr></thead>
+    <tbody>
+      <tr><td><b>核心概念</b></td><td>这个东西为什么存在、解决什么问题（原理层）</td></tr>
+      <tr><td><b>真实案例</b></td><td>论文、公开 postmortem 或匿名化的工程实践，尽量带数字</td></tr>
+      <tr><td><b>图表</b></td><td>每章至少一张原创示意图，均为本书重绘并标注来源</td></tr>
+      <tr><td><b>工具层侧栏</b></td><td>当前生态的具体做法，带截至日期</td></tr>
+      <tr><td><b>章末自测</b></td><td>估算 / 场景判断 / 决策 / 架构评审 / 面试题改编，答案默认折叠</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <p>关于术语：技术术语<b>首次出现时给出英文原文</b>，后接中文解释，如 <span class="term">KV cache</span>（键值缓存）；此后同章内直接使用英文。业界没有通用中文译名的术语一律保持英文，本书不生造译名。全部术语汇总在<a href="../glossary.html">附录 B 术语表</a>，每条带首次出现章节的锚点链接。</p>
+
+  <div class="callout">
+    <p><b>关于数字的诚实声明。</b>凡引用论文或公开报告的数字，案例区块底部都给出可溯源的出处，并保留原始实验条件（哪个模型、什么基线、什么负载）——脱离条件的「快 N 倍」是没有意义的。凡本书自己推导的估算，都会写出计算方法与假设，你可以换成自己的数字重算。价格类内容一律属于工具层，不作任何「当前价格」的承诺。</p>
+  </div>
+</section>
+
+<!-- ================= 0.3 ================= -->
+<section id="s03">
+  <div class="sec-tag"><span class="cell" style="background:var(--waste)"></span><span class="lab">0.3 · Storyline 贯穿案例</span></div>
+  <h2>全书贯穿案例预告</h2>
+
+  <p>Part 1 到 Part 4 各章相对独立，你可以按需跳读。<b>Part 5（Training / Fine-tuning）不一样</b>：它的四章共享一个连续的工程故事，连读构成一次完整的项目叙事。</p>
+
+  <div class="storyline">
+    <div class="sl-head">故事线 · 总览</div>
+    <p><b>把一个任务从前沿大模型 API 蒸馏到自托管小模型。</b>一个已经跑在生产环境、由前沿模型 API 支撑的高频任务，成本和延迟都开始变得难以接受。团队要回答：该不该自己训一个小模型接手？如果训，用什么方法、数据从哪来、怎么证明它真的能用？</p>
+    <p><b>5.1</b> 要不要蒸馏——先证明所有更便宜的手段都试过了 · <b>5.2</b> 选 LoRA 配置——rank 和 alpha 到底怎么定 · <b>5.3</b> 造数据——项目真正的瓶颈 · <b>5.4</b> 验证效果——怎么证明它没有偷偷变笨</p>
+  </div>
+
+  <p>每章开头都有这样一个橙色的「故事线」区块交代该阶段剧情，正文则讲述这一步背后的原理。这个案例是<b>综合多个真实项目的匿名化叙事</b>，其中的模型规模、数据量与成本数字均为便于推演而设定的示例假设，计算过程全部写出——重点是决策链条，不是具体数值。</p>
+
+  <p>此外 <a href="4-5-agent-eval.html">4.5 节</a> 会围绕一个私有 AI 助理平台的架构演进（同样匿名化）展开，Part 6 的多章则使用公开可查的 postmortem 与安全事件。</p>
+
+  <h3>推荐路径</h3>
+  <div class="tbl-scroll">
+  <table>
+    <thead><tr><th>你的情况</th><th>建议</th></tr></thead>
+    <tbody>
+      <tr><td>刚开始做 LLM 应用</td><td>顺序读 Part 1 → 6，「用 → 调 → 养」的递进本身就是知识地图</td></tr>
+      <tr><td>在优化成本 / 延迟</td><td>Part 1 全部 + Part 2 全部；<a href="2-4-capacity-planning.html">2.4</a> 是这条线的收口</td></tr>
+      <tr><td>在做检索问答</td><td>Part 3 全部，尤其 <a href="3-4-rag-vs-long-context.html">3.4</a>（什么时候不该用 RAG）</td></tr>
+      <tr><td>在做 agent</td><td>Part 4 全部 + <a href="6-2-prompt-injection.html">6.2</a>（agent 的攻击面比对话大得多）</td></tr>
+      <tr><td>准备面试</td><td><a href="../appendix-c-interview-index.html">附录 C</a> 面试题索引，按题型聚合了全书 quiz</td></tr>
+    </tbody>
+  </table>
+  </div>
 </section>
 
 <nav class="next">
   <a href="../index.html">← 目录</a>
-  <a href="1-1-tokenization.html">1.1 token 是什么、为什么中文更贵 →</a>
+  <a href="1-1-tokenization.html">1.1 Tokenization 与 Context Window →</a>
 </nav>
 
 </div>
