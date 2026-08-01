@@ -3,7 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>5.3 数据工程：真正的瓶颈 · AI 系统工程手册</title>
+<title>5.3 数据工程 — 真正的瓶颈 · AI 系统工程手册</title>
+<meta name="description" content="数据配比、去重与质量过滤、合成数据与蒸馏、灾难性遗忘及缓解。">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Noto+Sans+SC:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -20,23 +21,230 @@
 
 <header class="ch">
   <div class="blockrow" aria-hidden="true">
-    <span></span><span></span><span class="f"></span><span class="f"></span><span class="f"></span>
-    <span class="f"></span><span class="f"></span><span class="f"></span><span class="f"></span><span class="f"></span>
+    <span></span><span></span><span></span><span></span><span></span><span class="w"></span>
+    <span class="f"></span><span class="f"></span><span class="f"></span><span class="f"></span>
   </div>
   <div class="kicker">Part 5 · Training / Fine-tuning 训练与微调</div>
   <h1>5.3 Data Engineering
-    <span class="zh">数据工程：真正的瓶颈</span>
+    <span class="zh">数据工程：项目真正的瓶颈</span>
   </h1>
+  <div class="meta">
+    <span>难度 <b>★★★</b></span>
+    <span>阅读 <b>~16 min</b></span>
+    <span>面试出现频率 <b>中高</b></span>
+    <span>前置 <b>5.1 / 5.2</b></span>
+  </div>
 </header>
 
+<div class="storyline">
+  <div class="sl-head">故事线 第 3 段 · 造数据</div>
+  <p>配置定好了，训练脚本跑得通，一切就绪——除了数据。</p>
+  <p>好消息是团队坐在一座金矿上：<b>过去 6 个月的生产日志里，有上亿条「工单原文 → 教师模型输出」的配对</b>。这本身就是现成的蒸馏数据，一分钱标注费都不用花。</p>
+  <p>坏消息是，直接拿来训会得到一个很差的模型。这一节讲为什么，以及该怎么处理。</p>
+</div>
+
+<!-- ================= 核心概念 ================= -->
 <section id="concept">
-  <div class="sec-tag"><span class="cell" style="background:var(--free)"></span><span class="lab">Draft 待撰写</span></div>
-  <p>本章尚未撰写。返回<a href="../index.html">全书目录</a>。</p>
+  <div class="sec-tag"><span class="cell"></span><span class="lab">Core Concept 核心概念</span></div>
+  <h2>微调项目的时间去哪了</h2>
+
+  <p>一个没做过微调的团队，通常以为时间会花在调超参和等训练上。实际的时间分布几乎总是这样：<b>数据准备占绝大部分，训练本身只是最后几个小时</b>。</p>
+
+  <p>这不是执行不力，而是问题的本质——<b>模型学到的东西完全由数据决定</b>。超参数影响的是「学得好不好」，数据决定的是「学的是什么」。数据里有什么偏差，模型就会忠实地把这个偏差学会，而且往往学得比你希望的更彻底。</p>
+
+  <h3>四道必经的数据处理工序</h3>
+
+  <figure>
+    <svg viewBox="0 0 760 250" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="数据处理的四道工序与每道工序的作用">
+      <text x="20" y="24" class="lbl">从原始日志到训练集：每道工序都在解决一类具体的失败</text>
+
+      <rect x="20" y="42" width="140" height="52" rx="5" fill="var(--free)"/>
+      <text x="90" y="66" text-anchor="middle" class="mn">原始日志</text>
+      <text x="90" y="84" text-anchor="middle" class="mn">上亿条</text>
+
+      <path d="M164 68 L192 68" stroke="var(--ink-soft)" stroke-width="2"/>
+
+      <rect x="196" y="42" width="130" height="52" rx="5" fill="var(--alloc)"/>
+      <text x="261" y="66" text-anchor="middle" class="onfill">① 去重</text>
+      <text x="261" y="84" text-anchor="middle" class="onfill">防记忆与过拟合</text>
+
+      <path d="M330 68 L358 68" stroke="var(--ink-soft)" stroke-width="2"/>
+
+      <rect x="362" y="42" width="130" height="52" rx="5" fill="var(--alloc)"/>
+      <text x="427" y="66" text-anchor="middle" class="onfill">② 质量过滤</text>
+      <text x="427" y="84" text-anchor="middle" class="onfill">别把老师的错学会</text>
+
+      <path d="M496 68 L524 68" stroke="var(--ink-soft)" stroke-width="2"/>
+
+      <rect x="528" y="42" width="130" height="52" rx="5" fill="var(--alloc)"/>
+      <text x="593" y="66" text-anchor="middle" class="onfill">③ 配比重平衡</text>
+      <text x="593" y="84" text-anchor="middle" class="onfill">救长尾</text>
+
+      <path d="M593 98 L593 118 L300 118 L300 138" stroke="var(--ink-soft)" stroke-width="2"/>
+
+      <rect x="230" y="142" width="140" height="52" rx="5" fill="var(--waste)"/>
+      <text x="300" y="166" text-anchor="middle" class="onfill">④ 混入通用数据</text>
+      <text x="300" y="184" text-anchor="middle" class="onfill">防灾难性遗忘</text>
+
+      <path d="M374 168 L402 168" stroke="var(--ink-soft)" stroke-width="2"/>
+
+      <rect x="406" y="142" width="140" height="52" rx="5" fill="var(--head-bg)"/>
+      <text x="476" y="166" text-anchor="middle" class="onfill">训练集</text>
+      <text x="476" y="184" text-anchor="middle" class="onfill">一万条量级</text>
+
+      <text x="20" y="228" class="sub">注意数量级的变化：从上亿条到一万条。<tspan font-weight="700">这个筛选过程本身就是这个项目最主要的技术工作。</tspan></text>
+    </svg>
+    <figcaption><b>图 1 · 四道工序。</b>每一道都对应一类具体的模型失败：跳过去重会得到一个复读机；跳过质量过滤会把教师的错误固化下来；跳过重平衡会得到一个只认识高频类别的模型；跳过通用数据混入会得到一个只会做这一件事、其他都变笨了的模型。</figcaption>
+  </figure>
+
+  <h3>① 去重：比想象中重要</h3>
+  <p>真实业务数据里充满近似重复——同一个模板生成的工单、批量导入的相似记录、系统自动创建的告警。这些内容如果原样进入训练集，模型会<b>过度记忆这些高频模式</b>，在略有不同的输入上反而表现更差。</p>
+
+  <p>去重要做两层：<b>精确去重</b>（哈希，处理完全相同的样本）和<b>近似去重</b>（MinHash/SimHash 一类的方法，处理只差几个字的样本）。后者更重要，因为业务数据里完全相同的不多，<b>换个订单号就重复的却极多</b>。</p>
+
+  <h3>② 质量过滤：教师的错误会被忠实继承</h3>
+  <p>这是蒸馏场景独有的陷阱。生产日志里的教师输出<b>不是标准答案</b>——教师模型本身就有错误率。若基线准确率是 94%，那么直接拿全量日志训练，等于告诉学生模型：<b>那 6% 的错误也是对的</b>。</p>
+
+  <p>更糟的是，教师的错误<b>不是随机分布的</b>，而是集中在困难样本和长尾类别上。这意味着学生会在<b>最需要它做对的地方</b>，系统性地学到错误模式。结果就是「学生模型看起来准确率和老师差不多，但在难例上明显更差」。</p>
+
+  <p><b>可行的过滤手段</b>，按成本从低到高：<b>①</b> 规则校验（JSON 是否合法、枚举值是否在范围内、摘要长度是否超限）——零成本，能筛掉一批明显的坏样本；<b>②</b> 用<b>业务反馈信号</b>做过滤——工单被人工改过类别的，说明教师那次判错了，直接排除，这是最可靠的信号；<b>③</b> LLM-as-judge 打分过滤——必须先用几百条人工标注校准判官的一致性（<a href="6-4-eval-pipeline.html">6.4</a>）；<b>④</b> 人工审核——只用在最关键或最不确定的部分。</p>
+
+  <h3>③ 配比：模型会照着你给的分布学</h3>
+  <p>真实流量的类别分布几乎总是长尾的——少数几类占了绝大部分。如果按原始分布采样，模型会学到一个隐含的先验：<b>「不确定时就猜最常见的那一类」</b>。这在平均准确率上看起来还不错（因为高频类本来就占多数），但长尾类别的召回会很差，而<b>长尾类别往往是业务上更重要的那些</b>（严重故障、异常投诉）。</p>
+
+  <p>处理方式是重平衡：对长尾类别过采样、对高频类别欠采样。<b>但不要平衡到完全均匀</b>——那会走向另一个极端，让模型高估长尾类别的先验概率，产生大量误报。实践中常见的做法是<b>压缩而非消除差距</b>（例如按频次的平方根加权），并在评估时<b>按类别分别看指标</b>，用长尾类别的表现来决定重平衡的力度。</p>
+
+  <h3>④ 灾难性遗忘：只教一件事，会忘掉别的</h3>
+  <p><span class="term">catastrophic forgetting</span>（灾难性遗忘）是神经网络的老问题：在新任务上训练时，模型会覆盖掉与旧任务相关的参数。在微调场景中它的表现是——<b>模型在你训练的窄任务上变好了，但通用能力（指令遵循、多轮对话、其他领域的常识）退化了</b>。</p>
+
+  <p>如果这个模型只做这一件事，退化或许无所谓。但要小心两种情况：<b>①</b> 任务本身需要一些通用能力（比如摘要需要语言组织能力）；<b>②</b> 将来想扩展这个模型的用途。</p>
+
+  <p><b>三种缓解手段</b>：<b>混入通用指令数据</b>（最常用，在训练集中掺入一定比例的通用样本）；<b>用 LoRA 而非全量微调</b>（原权重冻结，遗忘天然更轻，见 <a href="5-2-sft-peft.html">5.2</a>）；<b>控制训练强度</b>（更少的 epoch、更小的学习率——过度训练是遗忘的主要放大器）。</p>
+
+  <div class="callout">
+    <p><b>务必做能力回归测试。</b>灾难性遗忘的隐蔽之处在于：<b>你的任务指标一路上涨，退化完全看不见</b>。必须准备一组<b>与训练任务无关</b>的测试样本（通用问答、指令遵循、基础推理），在每次训练后一并跑一遍。这是 <a href="5-4-alignment-and-validation.html">5.4</a> 的主题，但数据阶段就要为它预留。</p>
+  </div>
+</section>
+
+<!-- ================= 案例 ================= -->
+<section id="case">
+  <div class="sec-tag"><span class="cell" style="background:var(--waste)"></span><span class="lab">Case Study 真实案例</span></div>
+  <h2>两个关于数据的经典结论</h2>
+
+  <div class="case">
+    <div class="case-head"><span class="cell"></span>Textbooks Are All You Need (2023) · Stanford Alpaca (2023)</div>
+    <div class="case-body">
+      <p><b>phi-1：数据质量可以换取模型规模。</b>Gunasekar 等人训练了一个只有 <b>1.3B</b> 参数的代码模型，用的是精选的「教科书质量」网络数据（<b>60 亿 token</b>）加上用 GPT-3.5 合成的教科书与练习题（<b>10 亿 token</b>），<b>在 8 张 A100 上训练 4 天</b>。</p>
+      <div class="stats">
+        <div class="stat"><div class="n good">50.6%</div><div class="l">phi-1 在 HumanEval 上的 pass@1</div></div>
+        <div class="stat"><div class="n good">55.5%</div><div class="l">在 MBPP 上的表现</div></div>
+        <div class="stat"><div class="n">1.3B</div><div class="l">参数量——远小于同期竞争模型</div></div>
+        <div class="stat"><div class="n">45%</div><div class="l">同管线训练的 350M 版 phi-1-small 的 HumanEval 成绩</div></div>
+      </div>
+      <p><b>这项工作最值得应用层借鉴的一点</b>：它证明了<b>数据质量与模型规模在一定范围内可以互换</b>。对预算有限的团队，这是个好消息——<b>把资源投在数据筛选上，可能比投在更大的模型上回报更高</b>。这也直接支持了本章的立场：数据工程不是微调的准备工作，它就是微调工作本身。</p>
+      <p><b>条件</b>：这是代码领域的结果，且「教科书质量」的定义与筛选方法是该工作的核心贡献之一，不能简单套用到其他领域。</p>
+
+      <p><b>Alpaca：合成数据的成本结构。</b>Stanford 团队从 <b>175 条</b>人工编写的种子指令出发，用 <code>text-davinci-003</code> 生成了 <b>52,000 条</b>指令-输出对，再用它微调 LLaMA 7B。团队公开说明：数据生成的 API 花费<b>不到 500 美元</b>，整个复现成本<b>不到 600 美元</b>。</p>
+      <p><b>这个案例确立的模式，正是本 Part 故事线在做的事</b>：<b>用强模型的输出作为弱模型的训练数据</b>。它的经济学非常有吸引力——一次性的生成成本，换来长期的推理成本下降。</p>
+      <p><b>但要注意两条边界</b>：<b>①</b> 学生模型学到的是教师的<b>输出风格与表层行为</b>，不必然获得教师的底层能力——它可能「说得像」但在真正困难的样本上仍然不行；<b>②</b> 使用商业模型的输出训练模型，<b>需要核对该服务的使用条款</b>，这是法务问题而非技术问题，务必事先确认。</p>
+      <div class="src">来源：Gunasekar et al., "Textbooks Are All You Need", arXiv:2306.11644（数字引自论文摘要）；Stanford CRFM, "Alpaca: A Strong, Replicable Instruction-Following Model", 2023-03-13 公开博客（数字引自该博客）。</div>
+    </div>
+  </div>
+
+  <h2 style="margin-top:56px">故事线：从上亿条日志到一万条训练集</h2>
+
+  <div class="case">
+    <div class="case-head"><span class="cell"></span>工单结构化任务 · 数据管线的四步与踩到的坑</div>
+    <div class="case-body">
+      <p><b>起点</b>：6 个月生产日志，上亿条「工单原文 → 教师输出」配对。看起来是奢侈的数据量，实际可用的极少。</p>
+
+      <p><b>① 去重。</b>先做精确去重，再用近似去重处理「只有订单号/用户名不同」的模板化工单。<b>这一步砍掉的比例出乎意料地大</b>——大量工单来自系统自动创建的告警模板。若不去重，模型会把这些模板背下来，在人工撰写的工单上表现明显更差。</p>
+
+      <p><b>② 质量过滤。</b>三层依次执行：<b>规则校验</b>（JSON 合法性、枚举值合法性、摘要长度）→ <b>业务反馈过滤</b>（凡是后续被人工修改过类别的样本，说明教师判错了，全部剔除）→ <b>LLM judge 抽检</b>（先用 500 条人工标注校准判官，一致率达标后再规模化）。</p>
+      <p><b>第二层是最有价值的一层</b>，也是这个项目最幸运的地方：<b>业务系统里现成的「人工修正记录」，就是一份免费且高可靠的错误标注</b>。找到这类已存在的反馈信号，往往比新建标注流程便宜一个数量级——<b>动手标注之前，先把系统里已有的信号翻一遍。</b></p>
+
+      <p><b>③ 配比重平衡。</b>原始分布中前 3 个类别占了绝大多数流量。按原分布训练出的第一版模型，整体准确率不错，但<b>长尾类别几乎全军覆没</b>——而那些恰恰是需要人工优先介入的严重问题。重平衡后长尾召回显著改善，代价是高频类别上出现少量误报，属于业务上可接受的交换。</p>
+
+      <p><b>④ 混入通用数据。</b>加入一定比例的通用指令数据。第一版没有加，结果模型在工单任务上表现良好，但<b>摘要写得越来越机械</b>——它把「输出结构化字段」学得太彻底，连需要自然语言组织的摘要部分也变得模板化。混入通用数据后这个问题缓解。</p>
+
+      <div class="stats">
+        <div class="stat"><div class="n bad">上亿条</div><div class="l">原始日志</div></div>
+        <div class="stat"><div class="n">5 万条</div><div class="l">去重 + 过滤后的候选池</div></div>
+        <div class="stat"><div class="n good">1.2 万条</div><div class="l">重平衡采样后的最终训练集</div></div>
+        <div class="stat"><div class="n good">+15%</div><div class="l">额外混入的通用指令数据比例</div></div>
+      </div>
+
+      <p><b>回头看，三条最重要的教训</b>：<br><b>①</b> <b>「我们有海量数据」通常是一种错觉</b>——去重和过滤之后剩下的才是真实的数据量，而这个数字往往是原始量的千分之一。<br><b>②</b> <b>最好的标注信号常常已经存在于业务系统里</b>（人工修正记录、用户反馈、后续操作），只是没人把它当训练数据看。<br><b>③</b> <b>数据的每一处偏差都会被模型忠实放大。</b>类别分布偏了，模型就偏；教师错了，模型就跟着错；样本都是模板，模型就只会背模板。<b>训练过程没有纠错能力，它只是把数据里的规律固化下来。</b></p>
+      <div class="src">说明：本故事线为综合多个真实项目的<b>匿名化叙事</b>，不含任何可识别的公司、产品或个人信息。全部数字为便于演算设定的示例假设，非某次具体实验的测量数据。</div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 工具层 ================= -->
+<section id="tools">
+  <div class="sec-tag"><span class="cell" style="background:var(--free)"></span><span class="lab">Tooling Sidebar 工具层</span></div>
+  <div class="toolbox">
+    <div class="toolbox-head">
+      <span class="t">数据处理工具（会过期，正文不依赖本区块）</span>
+      <span class="date">截至 2026-08</span>
+    </div>
+    <div class="toolbox-body">
+      <p><b>去重</b>：<code>datasketch</code>（MinHash LSH）用于大规模近似去重；小数据量直接用 embedding 算余弦相似度也可以。<b>务必先抽样看一眼被判为重复的样本对</b>，确认阈值合理——阈值过松会误删有价值的多样性。</p>
+      <p><b>数据集管理</b>：HuggingFace <code>datasets</code> 处理加载与转换；数据集本身应<b>纳入版本管理</b>（DVC、或简单地用带哈希的对象存储）。<b>「哪个模型是用哪版数据训的」必须可追溯</b>，否则复现和归因都无从谈起。</p>
+      <p><b>合成数据</b>：Distilabel、以及各家的批处理 API（通常有明显折扣，适合大批量离线生成）。生成时注意<b>提高多样性</b>——同一个 prompt 反复生成会得到高度相似的样本，去重后所剩无几，等于白花钱。</p>
+      <p><b>合规提醒</b>：用商业模型的输出训练模型前，<b>务必核对该服务的使用条款</b>；同时注意训练数据中的个人信息脱敏（生产日志尤其容易包含用户姓名、电话、地址）。<b>这两件事都应该在数据管线的第一步做，而不是发现问题后回头补</b>。</p>
+      <p><b>最容易被跳过、却最有价值的一步</b>：<b>人工通读 100 条最终训练样本</b>。不是抽查格式，是真的读一遍内容。几乎每次都能发现自动化流程漏掉的系统性问题——标注不一致、模板残留、脱敏失败、教师输出中的固定错误模式。<b>半天的工作，能省下一次白跑的训练。</b></p>
+    </div>
+  </div>
+</section>
+
+<!-- ================= Quiz ================= -->
+<section id="quiz">
+  <div class="sec-tag"><span class="cell"></span><span class="lab">Quiz 自测</span></div>
+  <h2>章末自测</h2>
+  <div class="quiz">
+
+    <details>
+      <summary><span class="qtype">概念题</span>用强模型的输出蒸馏小模型时，为什么不能直接把教师的全部输出拿来训练？</summary>
+      <div class="answer">
+        <p><b>因为教师的输出不是标准答案，它自带错误率——而这个错误率会被学生完整继承。</b></p>
+        <p>若教师准确率是 94%，直接全量训练相当于告诉学生「这 6% 的错误也是正确的」。学生的表现上限就此被锁死在教师之下，且<b>它甚至学不到教师的真实水平</b>，因为它同时在学习教师的正确模式和错误模式。</p>
+        <p><b>更麻烦的是错误的分布不是随机的。</b>教师的错误集中在<b>困难样本和长尾类别</b>上——恰恰是业务上最需要做对的部分。所以学生会呈现一个特征鲜明的失败模式：<b>平均准确率看起来和教师接近，但在难例上明显更差</b>。只看总体指标会完全错过这一点。</p>
+        <p><b>正确做法</b>：① 用规则筛掉明显非法的输出；② <b>优先利用业务系统里已有的反馈信号</b>（人工修正记录、用户点踩、后续操作）——这是最可靠且免费的错误标注；③ 用校准过的 LLM judge 做抽检过滤；④ 对高价值的困难样本做人工审核。<b>核心原则：蒸馏的数据质量上限决定学生的能力上限，而这个上限可以通过过滤做到高于教师的平均水平。</b></p>
+      </div>
+    </details>
+
+    <details>
+      <summary><span class="qtype">场景判断</span>微调后模型在目标任务上准确率从 76% 提到 95%，团队准备上线。你会要求补做什么检查？</summary>
+      <div class="answer">
+        <p><b>目标任务的指标只覆盖了风险的一小部分。</b>至少要补四项检查：</p>
+        <p><b>① 能力回归测试（最重要）。</b>灾难性遗忘不会在目标任务指标上体现。必须用一组<b>与训练任务无关</b>的样本测通用能力——指令遵循、多轮对话、基础推理、其他领域的常识。<b>如果这个模型将来要接入更复杂的流程，通用能力的退化会在意想不到的地方暴露出来。</b></p>
+        <p><b>② 按类别/分桶看指标。</b>95% 的总体准确率可能由「高频类 99% + 长尾类 40%」构成。<b>必须按类别分别统计</b>，尤其是业务上重要的长尾类别。总体指标会系统性地掩盖长尾崩塌。</p>
+        <p><b>③ 检查数据泄漏。</b>确认评估集与训练集<b>没有重叠</b>，包括近似重复。最稳妥的做法是按<b>时间</b>切分——用训练数据之后时间段的样本做评估，这同时也检验了模型对新分布的适应性。<b>95% 这个数字如果来自被污染的评估集，那它什么也没说明。</b></p>
+        <p><b>④ 与教师和基座三方对比。</b>要同时知道：学生 vs 教师（差距有多大，是否可接受）、学生 vs 未微调的基座（提升是否真的来自微调）。<b>只有单一数字无法支撑上线决策。</b></p>
+        <p><b>此外还应准备</b>：影子模式运行一段时间对比线上真实分布的表现、灰度发布计划、以及回退到 API 的通道（<a href="6-5-degradation-fallback.html">6.5</a>）。</p>
+      </div>
+    </details>
+
+    <details>
+      <summary><span class="qtype">面试题改编</span>「微调项目里最难的部分是什么？」</summary>
+      <div class="answer">
+        <p><b>数据，而且不是「数据不够」这么简单。</b>好的回答要能拆出数据难在哪：</p>
+        <p><b>① 可用数据远少于原始数据。</b>「我们有上亿条日志」通常是错觉——去重（大量模板化的近似重复）和质量过滤之后，可用样本可能只剩千分之一。<b>先做一遍去重再谈数据量。</b></p>
+        <p><b>② 标注信号从哪来。</b>新建人工标注流程既慢又贵。有经验的做法是先在<b>业务系统里找已存在的反馈信号</b>——人工修正记录、用户点踩、工单后续流转，这些天然就是标签，成本低一个数量级。</p>
+        <p><b>③ 配比比数量更影响结果。</b>真实分布是长尾的，照搬会得到一个「只认识高频类」的模型，而长尾往往是业务上更重要的部分。但也不能平衡到均匀，那会带来误报。</p>
+        <p><b>④ 蒸馏场景要额外处理教师的错误。</b>教师输出不是标准答案，其错误集中在困难样本上，直接训练会让学生在难例上系统性地更差。</p>
+        <p><b>⑤ 通用能力的退化是隐形的。</b>目标任务指标上涨的同时，通用能力可能正在下降，而没有任何指标会告诉你。必须单独做能力回归测试。</p>
+        <p><b>收束一句</b>：<b>训练过程没有纠错能力，它只是把数据里的规律固化下来。</b>所以数据里的每一处偏差——分布偏斜、教师错误、模板重复、标注不一致——都会被模型忠实地放大。这就是为什么时间几乎全花在数据上，而这不是效率问题，是问题的本质。</p>
+      </div>
+    </details>
+
+  </div>
 </section>
 
 <nav class="next">
-  <a href="5-2-sft-peft.html">← 5.2 LoRA / QLoRA 原理与配置</a>
-  <a href="5-4-alignment-and-validation.html">5.4 偏好对齐与效果验证 →</a>
+  <a href="5-2-sft-peft.html">← 5.2 SFT 与 PEFT 家族</a>
+  <a href="5-4-alignment-and-validation.html">5.4 偏好对齐与验证 →</a>
 </nav>
 
 </div>

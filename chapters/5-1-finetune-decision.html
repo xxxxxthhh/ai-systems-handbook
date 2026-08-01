@@ -3,7 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>5.1 决策框架：先别训 · AI 系统工程手册</title>
+<title>5.1 Fine-tune 是最后的手段 · AI 系统工程手册</title>
+<meta name="description" content="prompt → few-shot → RAG → fine-tune 的升级路径，与每一级的成本收益边界。">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Noto+Sans+SC:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -20,23 +21,195 @@
 
 <header class="ch">
   <div class="blockrow" aria-hidden="true">
-    <span></span><span></span><span class="f"></span><span class="f"></span><span class="f"></span>
+    <span></span><span></span><span></span><span class="w"></span><span class="f"></span>
     <span class="f"></span><span class="f"></span><span class="f"></span><span class="f"></span><span class="f"></span>
   </div>
   <div class="kicker">Part 5 · Training / Fine-tuning 训练与微调</div>
   <h1>5.1 Fine-tuning Is the Last Resort
-    <span class="zh">决策框架：先别训</span>
+    <span class="zh">决策框架：先证明便宜的手段都试过了</span>
   </h1>
+  <div class="meta">
+    <span>难度 <b>★★☆</b></span>
+    <span>阅读 <b>~15 min</b></span>
+    <span>面试出现频率 <b>高</b></span>
+    <span>前置 <b>3.1 / 3.4</b></span>
+  </div>
 </header>
 
+<div class="storyline">
+  <div class="sl-head">故事线 第 1 段 · 要不要蒸馏</div>
+  <p>一个 SaaS 客服平台有个高频任务：把用户提交的自由文本工单，转成结构化字段——<b>类别</b>（12 个枚举值）、<b>严重程度</b>（4 档）、<b>受影响产品</b>，外加一段 60 字以内的摘要。它跑在前沿模型 API 上，<b>日均 200 万次调用</b>，是工单自动分派的第一道关口。</p>
+  <p>两个压力同时到来：这个任务的 API 成本已占该产品线基础设施预算的大头；P95 延迟 2.3 秒，拖慢了分派时效。有人提议：<b>自己训一个小模型接手。</b>这一节要回答的是——该不该训？</p>
+  <p><span class="mn">本故事线贯穿 5.1–5.4，为综合多个真实项目的匿名化叙事；全部数字均为便于推演设定的示例假设，计算过程写出，重点是决策链条而非具体数值。</span></p>
+</div>
+
+<!-- ================= 核心概念 ================= -->
 <section id="concept">
-  <div class="sec-tag"><span class="cell" style="background:var(--free)"></span><span class="lab">Draft 待撰写</span></div>
-  <p>本章尚未撰写。返回<a href="../index.html">全书目录</a>。</p>
+  <div class="sec-tag"><span class="cell"></span><span class="lab">Core Concept 核心概念</span></div>
+  <h2>升级路径：每一级贵一个数量级</h2>
+
+  <p>「效果不够好，微调一下吧」是这个领域里最昂贵的条件反射。微调的成本不只是几张 GPU 卡和几天时间——它带来的是<b>一份需要长期维护的资产</b>：数据管线、训练脚本、模型版本管理、评估集、回归测试、以及基座模型升级时的重新训练。</p>
+
+  <p>所以正确的顺序是沿着一条升级路径逐级尝试，<b>每一级都要先证明「上一级确实不够」</b>：</p>
+
+  <figure>
+    <svg viewBox="0 0 760 300" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="从提示词到微调的四级升级路径与成本对比">
+      <text x="20" y="24" class="lbl">升级路径：迭代成本每级上一个台阶</text>
+
+      <!-- steps -->
+      <rect x="20" y="230" width="160" height="46" rx="5" fill="var(--alloc)"/>
+      <text x="100" y="250" text-anchor="middle" class="onfill">① Prompt 工程</text>
+      <text x="100" y="268" text-anchor="middle" class="onfill">迭代成本：分钟</text>
+
+      <rect x="196" y="182" width="160" height="46" rx="5" fill="var(--alloc)"/>
+      <text x="276" y="202" text-anchor="middle" class="onfill">② Few-shot 示例</text>
+      <text x="276" y="220" text-anchor="middle" class="onfill">迭代成本：小时</text>
+
+      <rect x="372" y="134" width="160" height="46" rx="5" fill="var(--alloc)"/>
+      <text x="452" y="154" text-anchor="middle" class="onfill">③ RAG / 工具</text>
+      <text x="452" y="172" text-anchor="middle" class="onfill">迭代成本：天–周</text>
+
+      <rect x="548" y="86" width="180" height="46" rx="5" fill="var(--waste)"/>
+      <text x="638" y="106" text-anchor="middle" class="onfill">④ Fine-tune</text>
+      <text x="638" y="124" text-anchor="middle" class="onfill">迭代成本：周–月</text>
+
+      <!-- arrow -->
+      <path d="M30 210 L30 60 L740 60" fill="none" stroke="var(--line)" stroke-width="2"/>
+      <text x="44" y="52" class="sub">每一级的「改一版再看效果」所需时间，大约上一个数量级</text>
+
+      <!-- annotations -->
+      <text x="20" y="292" class="sub">先用前三级把问题定义清楚——很多时候走到②或③就够了，而且此时你才真正知道要微调什么。</text>
+    </svg>
+    <figcaption><b>图 1 · 四级升级路径。</b>横轴不是「能力」而是<b>迭代成本</b>。微调的真正代价不在训练本身，而在于<b>它把一个「改 prompt 五分钟见效」的循环，变成了「改数据两周见效」的循环</b>——这对产品迭代速度的影响，往往比账单更严重。</figcaption>
+  </figure>
+
+  <h3>先问一个分类问题：要改的是「事实」还是「行为」？</h3>
+  <p>这是整个决策中最有判别力的一问，它能直接排除掉大部分错误选项：</p>
+
+  <div class="tbl-scroll">
+  <table>
+    <thead><tr><th>你想解决的问题</th><th>正确工具</th><th>为什么不是微调</th></tr></thead>
+    <tbody>
+      <tr><td><b>模型不知道某些事实</b><br>（公司政策、产品文档、今天的数据）</td><td>RAG / 工具调用</td><td>事实会变，微调跟不上；且微调注入事实<b>既易遗忘又难溯源</b>（<a href="3-1-why-rag.html">3.1</a>）</td></tr>
+      <tr><td><b>输出格式不稳定</b><br>（JSON 结构、字段缺失）</td><td>constrained decoding<br>约束解码</td><td>解码层能<b>保证</b>结构合法；微调只能<b>提高概率</b>。用概率手段解决确定性问题是本末倒置</td></tr>
+      <tr><td><b>模型不会用某个工具</b></td><td>改工具 schema</td><td>多半是 schema 描述不清，不是模型不会（<a href="4-1-tool-use.html">4.1</a>）</td></tr>
+      <tr><td><b>需要特定的风格 / 领域推理方式</b></td><td><b>fine-tune ✓</b></td><td>这类隐性行为难以在 prompt 中完整描述，正是微调的适用面</td></tr>
+      <tr><td><b>需要小模型达到大模型在窄任务上的表现</b></td><td><b>fine-tune ✓</b>（蒸馏）</td><td>成本/延迟驱动，这是本 Part 故事线的场景</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <div class="callout">
+    <p><b>一句话记忆：微调改变的是「模型怎么做事」，不是「模型知道什么」。</b>把这条记牢，能挡掉至少一半的错误微调项目。</p>
+  </div>
+
+  <h3>该微调的四个条件（需同时满足）</h3>
+  <p>即使确认了要改的是行为，也还需要四个条件都成立，微调才是理性选择：</p>
+
+  <p><b>① 任务窄且稳定。</b>任务定义在未来一年内不会大改。如果需求还在频繁变动，微调出来的模型会不断作废——你会陷入「训完就过时」的循环。</p>
+
+  <p><b>② 调用量足够大。</b>微调是<b>一次性投入换取长期的单位成本下降</b>。日均一千次调用的任务，省下的钱永远追不上投入的工程时间。<b>量是摊薄成本的唯一途径。</b></p>
+
+  <p><b>③ 质量可自动评估。</b>没有可自动运行的 eval，你无法判断训练是否成功、也无法在基座升级后验证新版本。<b>没有 eval 的微调项目基本等于在盲飞</b>——这一条比大多数人以为的更硬。</p>
+
+  <p><b>④ 有数据，或者有办法造数据。</b>下一节故事线会讲到，这通常是四个条件里最容易低估、也最容易卡住项目的一个（<a href="5-3-data-engineering.html">5.3</a>）。</p>
+</section>
+
+<!-- ================= 案例 ================= -->
+<section id="case">
+  <div class="sec-tag"><span class="cell" style="background:var(--waste)"></span><span class="lab">Case Study 案例推演</span></div>
+  <h2>故事线：这个工单任务该不该训</h2>
+
+  <div class="case">
+    <div class="case-head"><span class="cell"></span>四个条件逐条核对 + 盈亏平衡测算</div>
+    <div class="case-body">
+      <p><b>第一步：先把不用训就能拿到的收益榨干。</b>团队在提出微调之前，先做了三件成本低得多的事：</p>
+      <p><b>① 精简 prompt</b>——few-shot 示例从 8 条减到 3 条（实测准确率无明显下降），输入从 900 token 降到约 520 token；<b>② 开启 prompt caching</b>——system prompt + few-shot 共约 400 token 是稳定前缀，命中率很高（<a href="2-2-prompt-caching.html">2.2</a>）；<b>③ 模型分级</b>——把最简单的「严重程度」判定拆出来走更便宜的模型档位（<a href="2-3-model-routing.html">2.3</a>）。</p>
+      <p><b>这三步合计已经把成本压掉了相当一部分，而且都是天级的工作量。</b>这一步不能跳过——它既是纪律，也让你在后面真的动手微调时，能拿到一个诚实的基线：<b>微调要超越的不是「优化前的成本」，而是「已经优化过的成本」</b>。</p>
+
+      <p><b>第二步：核对四个条件。</b></p>
+      <div class="stats">
+        <div class="stat"><div class="n good">✓ 窄且稳定</div><div class="l">12 个类别枚举，两年未变</div></div>
+        <div class="stat"><div class="n good">✓ 量大</div><div class="l">日均 200 万次，摊薄空间充足</div></div>
+        <div class="stat"><div class="n good">✓ 可评估</div><div class="l">类别/严重度是分类任务，准确率可自动算</div></div>
+        <div class="stat"><div class="n good">✓ 有数据</div><div class="l">6 个月生产日志 = 现成的教师模型输出</div></div>
+      </div>
+      <p>四条全部满足，而且第③、④条尤其漂亮：<b>结构化输出任务天然可自动评估</b>，<b>已有的生产日志天然就是蒸馏数据</b>——这两点让这个任务比大多数微调候选项更适合动手。</p>
+
+      <p><b>第三步：排除更便宜的替代方案。</b>要改的是「事实」还是「行为」？——都不是。这里要改的是<b>「用更小的模型做同样的事」</b>，是成本与延迟驱动的<span class="term">distillation</span>（蒸馏）。RAG 不适用（任务不依赖外部知识），约束解码已经在用（保证 JSON 合法），换更小的现成模型试过——未微调的 8B 模型类别准确率只有 76%，远低于 94% 的基线。<b>到这一步，微调才第一次成为唯一剩下的选项。</b></p>
+
+      <p><b>第四步：盈亏平衡测算</b>（示例假设，方法比数字重要）：</p>
+      <div class="formula">一次性投入：数据工程 + 训练 + 评估体系 ≈ <b>4–6 人周</b> + 少量 GPU 训练费用<br>持续成本：自托管推理的 GPU 月费（按 <a href="2-4-capacity-planning.html">2.4</a> 的方法估算）+ 维护<br><br>节省 = 优化后的 API 月成本 − 自托管月成本<br>回本周期 = 一次性投入 ÷ 月节省<br><br><b>决策线</b>：回本周期 &lt; 6 个月 → 值得做<br>　　　　　6–12 个月 → 看这个任务的战略重要性<br>　　　　　&gt; 12 个月 → 不做，把人力投到别处</div>
+
+      <p><b>第五步：把风险写下来。</b>决定要做之后，团队明确记录了三条退出条件——<b>①</b> 若学生模型在长尾类别上的准确率无法达到基线的 95%，则放弃；<b>②</b> 若数据准备超过 3 周仍未达标，则重新评估；<b>③</b> 上线后保留 API 回退通道至少两个季度（<a href="6-5-degradation-fallback.html">6.5</a>）。<b>提前写好放弃条件，是防止沉没成本绑架决策的唯一办法</b>——微调项目尤其容易「已经投入这么多了，再试一轮」。</p>
+      <div class="src">说明：本故事线为综合多个真实项目的<b>匿名化叙事</b>，不含任何可识别的公司、产品或个人信息。全部数字均为便于演算设定的示例假设，计算方法已写出，<b>请勿直接引用本文数字</b>。</div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 工具层 ================= -->
+<section id="tools">
+  <div class="sec-tag"><span class="cell" style="background:var(--free)"></span><span class="lab">Tooling Sidebar 工具层</span></div>
+  <div class="toolbox">
+    <div class="toolbox-head">
+      <span class="t">微调之前该先试的工具（会过期，正文不依赖本区块）</span>
+      <span class="date">截至 2026-08</span>
+    </div>
+    <div class="toolbox-body">
+      <p><b>约束解码 / 结构化输出</b>：主流商业 API 提供 structured outputs / JSON schema 模式；自托管可用 Outlines、XGrammar、以及 vLLM / SGLang 内置的语法约束能力。<b>凡是「格式不稳定」的问题，先用这个解决，不要用微调。</b></p>
+      <p><b>Prompt 优化</b>：DSPy 等框架可自动搜索 prompt 与 few-shot 示例组合。在动手标数据之前值得一试——它有时能把「看起来必须微调」的差距补上。</p>
+      <p><b>托管微调服务</b>：多家厂商提供上传数据即可微调的服务，省掉全部基础设施。适合验证「微调到底能带来多少提升」这个问题，<b>作为可行性验证的快速路径很划算</b>；但要注意模型无法自托管、无法迁移，长期成本结构与自托管不同。</p>
+      <p><b>先做一次「上限探测」</b>：在投入完整数据管线之前，用几百条高质量样本快速跑一次微调，看提升幅度。<b>如果几百条样本带来的提升接近于零，那么几万条大概率也救不了</b>——问题可能出在任务定义或基座选择上。这一步通常只要一两天，能避免几周的浪费。</p>
+    </div>
+  </div>
+</section>
+
+<!-- ================= Quiz ================= -->
+<section id="quiz">
+  <div class="sec-tag"><span class="cell"></span><span class="lab">Quiz 自测</span></div>
+  <h2>章末自测</h2>
+  <div class="quiz">
+
+    <details>
+      <summary><span class="qtype">场景判断组</span>四个需求各选一条路：A. 客服要能回答最新的退款政策；B. 需要稳定输出符合 schema 的 JSON；C. 需要模型用本公司资深法务的方式审阅合同条款；D. 模型总在特定行业术语上理解错误。</summary>
+      <div class="answer">
+        <p><b>A 退款政策 → RAG。</b>这是<b>事实</b>问题：会变、需溯源、可能需权限区分。微调注入事实既跟不上更新，又给不出出处（<a href="3-1-why-rag.html">3.1</a>）。<br><span class="mn">补充：若政策只有几条且极少变，写进 system prompt 比 RAG 更简单——别跳过第①级。</span></p>
+        <p><b>B JSON 格式 → constrained decoding。</b>格式合法性应该在<b>解码层强制保证</b>，而不是靠训练提高概率。用微调解决格式问题是典型的用昂贵手段解决已有确定性方案的问题。</p>
+        <p><b>C 法务审阅风格 → fine-tune ✓。</b>这是<b>行为</b>问题：怎么组织论证、关注哪些风险点、用什么措辞——这类隐性风格无法在 prompt 里完整描述，也无法从检索材料中现学。<br><span class="mn">但仍要先试 few-shot：如果 5 个精选的审阅样例就能带出风格，就不必微调。</span></p>
+        <p><b>D 术语理解错误 → 先诊断，再决定。</b>这是本题最需要思考的一项，因为它可能是三种不同的问题：<br>• 若模型<b>不知道这些术语的定义</b> → 事实问题 → RAG 或在 prompt 里给术语表；<br>• 若模型<b>知道通用含义但贵司有特殊定义</b> → 先试在 system prompt 里明确定义，通常就够了；<br>• 若模型<b>需要内化整套领域的推理方式</b>（术语只是表征） → 才是微调。<br><b>「术语理解错误」是一个症状而不是病因</b>，直接跳到微调是常见的误诊。</p>
+      </div>
+    </details>
+
+    <details>
+      <summary><span class="qtype">决策题</span>某团队说：「我们微调了模型，让它记住公司的 500 条产品规格。」这个方案会遇到什么问题？</summary>
+      <div class="answer">
+        <p><b>方向性错误：用微调注入事实。</b>五个必然会遇到的问题：</p>
+        <p><b>① 更新代价不成比例。</b>改一条规格就要重新训练加验证——按天计。而写进索引是按秒计。产品规格是会变的，这个循环无法维持。</p>
+        <p><b>② 无法溯源。</b>模型说「型号 X 支持功能 Y」，没有任何依据可核对。对产品规格这类需要准确性的信息，不可溯源本身就是不可用。</p>
+        <p><b>③ 事实注入本就是微调的弱项。</b>少量样本上的事实记忆<b>既容易被遗忘，又容易过拟合</b>——模型可能记住了训练时的表述方式而非事实本身，换个问法就答错。</p>
+        <p><b>④ 幻觉不减反增。</b>微调让模型对这个领域更「自信」，但它并没有真正掌握全部 500 条，结果是<b>在没记住的部分编得更像真的</b>——比不微调时更危险。</p>
+        <p><b>⑤ 灾难性遗忘。</b>在窄数据上训练会损伤通用能力（<a href="5-3-data-engineering.html">5.3</a>），得不偿失。</p>
+        <p><b>正确方案</b>：500 条产品规格放进检索索引（量小的话甚至可以直接放进 system prompt 配合 prompt caching）。<b>如果同时还希望模型用特定风格回答规格问题，那才是可以叠加的微调需求</b>——但那时训练的目标是风格，不是规格内容。</p>
+      </div>
+    </details>
+
+    <details>
+      <summary><span class="qtype">面试题改编</span>「什么时候应该微调？」</summary>
+      <div class="answer">
+        <p>好的回答分三层，且<b>要先讲不该微调的情况</b>——这体现判断力：</p>
+        <p><b>第一层：先排除。</b>要改的是事实 → RAG 或工具调用；要改的是格式 → 约束解码；工具用不好 → 改 schema。<b>微调改变的是模型「怎么做事」，不是它「知道什么」。</b></p>
+        <p><b>第二层：两类真正适用的场景。</b>① <b>行为塑造</b>——特定风格、领域推理方式，这类隐性能力难以在 prompt 中完整描述；② <b>蒸馏</b>——用小模型在窄任务上达到大模型的表现，由成本或延迟驱动。</p>
+        <p><b>第三层：四个必要条件。</b>任务窄且稳定、调用量足以摊薄成本、质量可自动评估、有数据或造数据的办法。<b>四者缺一，微调都会变成一个持续消耗人力却不产出价值的项目。</b></p>
+        <p><b>加分</b>：主动提到微调的真实代价不是训练费用，而是<b>它把迭代循环从分钟级变成了周级</b>，以及基座模型升级后需要重训的长期负担。以及强调「先把 prompt 优化、缓存、路由这些便宜手段榨干，再来谈微调」——微调要超越的基线是<b>已经优化过的系统</b>，而不是最初那个版本。</p>
+      </div>
+    </details>
+
+  </div>
 </section>
 
 <nav class="next">
-  <a href="4-5-agent-eval.html">← 4.5 轨迹评估与任务完成率</a>
-  <a href="5-2-sft-peft.html">5.2 LoRA / QLoRA 原理与配置 →</a>
+  <a href="4-5-agent-eval.html">← 4.5 Agent Evaluation</a>
+  <a href="5-2-sft-peft.html">5.2 SFT 与 PEFT 家族 →</a>
 </nav>
 
 </div>

@@ -3,7 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>5.4 偏好对齐与效果验证 · AI 系统工程手册</title>
+<title>5.4 偏好对齐与验证 · AI 系统工程手册</title>
+<meta name="description" content="RLHF/DPO 概念层、eval set 设计、与 base model 的 A/B 与能力回归测试。">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Noto+Sans+SC:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -20,23 +21,218 @@
 
 <header class="ch">
   <div class="blockrow" aria-hidden="true">
-    <span></span><span></span><span class="f"></span><span class="f"></span><span class="f"></span>
-    <span class="f"></span><span class="f"></span><span class="f"></span><span class="f"></span><span class="f"></span>
+    <span></span><span></span><span></span><span></span><span></span><span></span><span></span>
+    <span class="w"></span><span class="f"></span><span class="f"></span>
   </div>
   <div class="kicker">Part 5 · Training / Fine-tuning 训练与微调</div>
-  <h1>5.4 Preference Alignment &amp; Validation
-    <span class="zh">偏好对齐与效果验证</span>
+  <h1>5.4 Alignment &amp; Validation
+    <span class="zh">偏好对齐，与怎么证明它真的能用</span>
   </h1>
+  <div class="meta">
+    <span>难度 <b>★★★</b></span>
+    <span>阅读 <b>~15 min</b></span>
+    <span>面试出现频率 <b>中高</b></span>
+    <span>前置 <b>5.1 – 5.3</b></span>
+  </div>
 </header>
 
+<div class="storyline">
+  <div class="sl-head">故事线 第 4 段 · 验证效果</div>
+  <p>模型训完了。目标任务上的类别准确率 95%，超过了 94% 的教师基线；单次推理延迟从 2.3 秒降到 0.4 秒，成本按预期大幅下降。</p>
+  <p>皆大欢喜——但团队里有人问了一个问题：<b>我们怎么知道它没有在别的地方偷偷变笨？</b>以及更根本的：<b>这个 95% 能不能代表它上线后的真实表现？</b></p>
+</div>
+
+<!-- ================= 核心概念 ================= -->
 <section id="concept">
-  <div class="sec-tag"><span class="cell" style="background:var(--free)"></span><span class="lab">Draft 待撰写</span></div>
-  <p>本章尚未撰写。返回<a href="../index.html">全书目录</a>。</p>
+  <div class="sec-tag"><span class="cell"></span><span class="lab">Core Concept 核心概念</span></div>
+  <h2>先说对齐：SFT 之后还缺什么</h2>
+
+  <p><a href="5-3-data-engineering.html">5.3</a> 讲的 SFT 教模型「<b>照着这些示范做</b>」。但有一类需求是示范教不了的：<b>当存在多个都不算错的输出时，哪个更好？</b>摘要是详细些好还是简洁些好？语气该多正式？拒绝一个不合理请求时该怎么措辞？</p>
+
+  <p>这类偏好难以写成标准答案，却容易做<b>比较</b>——给人看两个输出，问哪个更好，人几乎总能回答。<span class="term">preference alignment</span>（偏好对齐）就是利用这种「比较比生成容易」的不对称性。</p>
+
+  <figure>
+    <svg viewBox="0 0 760 260" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="RLHF 与 DPO 的流程对比">
+      <text x="20" y="24" class="lbl">同样的偏好数据，两条路径</text>
+
+      <text x="20" y="56" class="sub">RLHF：训一个奖励模型，再用强化学习去最大化它</text>
+      <rect x="20" y="66" width="130" height="40" rx="5" fill="var(--free)"/>
+      <text x="85" y="91" text-anchor="middle" class="mn">偏好数据</text>
+      <path d="M154 86 L182 86" stroke="var(--ink-soft)" stroke-width="2"/>
+      <rect x="186" y="66" width="150" height="40" rx="5" fill="var(--waste)"/>
+      <text x="261" y="91" text-anchor="middle" class="onfill">训练奖励模型</text>
+      <path d="M340 86 L368 86" stroke="var(--ink-soft)" stroke-width="2"/>
+      <rect x="372" y="66" width="180" height="40" rx="5" fill="var(--waste)"/>
+      <text x="462" y="91" text-anchor="middle" class="onfill">强化学习优化策略</text>
+      <path d="M556 86 L584 86" stroke="var(--ink-soft)" stroke-width="2"/>
+      <rect x="588" y="66" width="130" height="40" rx="5" fill="var(--alloc)"/>
+      <text x="653" y="91" text-anchor="middle" class="onfill">对齐后的模型</text>
+      <text x="186" y="126" class="sub">两阶段，需采样、需调参，工程复杂度高</text>
+
+      <text x="20" y="176" class="sub">DPO：跳过奖励模型，直接在偏好数据上做一次策略训练</text>
+      <rect x="20" y="186" width="130" height="40" rx="5" fill="var(--free)"/>
+      <text x="85" y="211" text-anchor="middle" class="mn">偏好数据</text>
+      <path d="M154 206 L182 206" stroke="var(--ink-soft)" stroke-width="2"/>
+      <rect x="186" y="186" width="366" height="40" rx="5" fill="var(--alloc)"/>
+      <text x="369" y="211" text-anchor="middle" class="onfill">单阶段策略训练（本质是一个分类问题）</text>
+      <path d="M556 206 L584 206" stroke="var(--ink-soft)" stroke-width="2"/>
+      <rect x="588" y="186" width="130" height="40" rx="5" fill="var(--alloc)"/>
+      <text x="653" y="211" text-anchor="middle" class="onfill">对齐后的模型</text>
+      <text x="186" y="246" class="sub">稳定、轻量，无需拟合奖励模型或训练中采样</text>
+    </svg>
+    <figcaption><b>图 1 · 两条对齐路径。</b>DPO 的洞察是：<b>奖励函数与最优策略之间存在一个映射关系</b>，因此那个受约束的奖励最大化问题，可以用<b>单阶段的策略训练</b>直接求解——本质上变成了在偏好数据上解一个分类问题。奖励模型这个中间产物，从必需变成了可选。</figcaption>
+  </figure>
+
+  <p><b>对应用层团队的实用判断</b>：绝大多数微调项目<b>只需要 SFT，不需要偏好对齐</b>。当你的任务有明确的对错标准（分类、抽取、结构化输出），SFT 就够了。只有当「什么算好」本身难以定义、只能靠比较来表达时，才值得引入 DPO 这一层。<b>而在那之前，先确认 SFT 的数据质量已经榨干了</b>——多数被归因为「需要对齐」的问题，其实是 SFT 数据不够好。</p>
+
+  <h3>验证：训练完成不等于可以上线</h3>
+  <p>本章真正的重点在这里。微调模型的验证有三个层次，<b>缺一层就可能上线一个看起来很好的坏模型</b>：</p>
+
+  <div class="tbl-scroll">
+  <table>
+    <thead><tr><th>层次</th><th>回答什么问题</th><th>做法</th><th>漏掉会怎样</th></tr></thead>
+    <tbody>
+      <tr><td><b>① 目标任务</b></td><td>训练的这件事做好了吗</td><td>独立 eval set，<b>按类别分桶</b>看指标</td><td>被总体指标掩盖的长尾崩塌</td></tr>
+      <tr><td><b>② 能力回归</b></td><td>别的能力有没有退化</td><td>与训练任务<b>无关</b>的通用测试集</td><td>灾难性遗忘悄悄发生，接入更复杂流程时才爆</td></tr>
+      <tr><td><b>③ 三方对比</b></td><td>相比教师和基座各如何</td><td>学生 / 教师 / 未微调基座，同一 eval set</td><td>不知道提升是否来自微调，也不知道离教师还差多远</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h3>eval set 设计的三条硬规则</h3>
+
+  <p><b>① 必须按时间切分，不能随机切分。</b>这是最重要的一条。随机切分会让训练集和评估集来自同一时间段的同一批数据——近似重复的样本可能同时出现在两边，<b>评估分数因此被系统性高估</b>。正确做法是用训练数据之后时间段的样本做评估，这同时还检验了模型对分布漂移的适应性。</p>
+
+  <p><b>② 必须覆盖长尾。</b>如果 eval set 按真实分布采样，那么长尾类别可能只有几个样本，指标毫无统计意义。应当<b>对长尾类别过采样</b>，保证每个类别都有足够的样本量，然后<b>分类别报告</b>而不是报一个加权总分。</p>
+
+  <p><b>③ 必须包含已知的难例。</b>把历史上教师模型出过错的样本、人工修正过的样本、业务上最关键的边界情况单独收集成一个子集。<b>这个子集的表现比总体准确率更能预测上线后的真实体验</b>——因为用户不会平均地遇到问题，他们遇到的正是这些难例。</p>
+
+  <div class="callout">
+    <p><b>数据泄漏是微调项目最常见的自欺。</b>症状是「离线评估 96%，上线后感觉完全不对」。除了时间切分，还要主动检查评估集与训练集之间的<b>近似重复</b>（用 <a href="5-3-data-engineering.html">5.3</a> 的去重方法跨集合跑一遍）。<b>一个被污染的评估集，比没有评估集更危险——因为它给了你虚假的信心。</b></p>
+  </div>
+
+  <h3>上线：影子模式 → 灰度 → 全量</h3>
+  <p>离线评估再充分，也无法完全预测线上表现。三段式上线是把风险切碎的标准做法：</p>
+
+  <p><b>① 影子模式（shadow mode）。</b>新模型与线上模型<b>并行接收真实流量</b>，但输出不生效，只记录下来做对比。这是最有价值的一步——它用<b>真实的线上分布</b>验证模型，且零风险。运行一到两周，你会发现离线评估集里根本没有的输入形态。</p>
+  <p><b>② 灰度发布。</b>从很小的流量比例开始，按业务指标（而非离线指标）逐步放量。<b>关键是监控要能按模型版本分桶</b>，否则新旧模型的表现会被混在一起。</p>
+  <p><b>③ 保留回退通道。</b>必须能一键切回教师 API。故事线在 <a href="5-1-finetune-decision.html">5.1</a> 就把这条写进了退出条件——<b>回退能力不是上线后再补的，是设计时就要保证的</b>（<a href="6-5-degradation-fallback.html">6.5</a>）。</p>
+</section>
+
+<!-- ================= 案例 ================= -->
+<section id="case">
+  <div class="sec-tag"><span class="cell" style="background:var(--waste)"></span><span class="lab">Case Study 真实案例</span></div>
+  <h2>DPO：把两阶段压成一阶段</h2>
+
+  <div class="case">
+    <div class="case-head"><span class="cell"></span>Direct Preference Optimization: Your Language Model is Secretly a Reward Model (NeurIPS 2023)</div>
+    <div class="case-body">
+      <p>在 DPO 之前，用人类偏好调整模型行为的标准路径是 <span class="term">RLHF</span>：先在偏好数据上<b>拟合一个奖励模型</b>，再用强化学习去最大化这个奖励。这条路径有效，但工程上很重——两个阶段、训练中需要从模型采样、超参数敏感。</p>
+      <p>Rafailov 等人的贡献是指出：<b>利用奖励函数与最优策略之间的映射关系，这个受约束的奖励最大化问题可以用单阶段的策略训练来求解</b>——本质上变成在偏好数据上解一个分类问题。</p>
+      <div class="stats">
+        <div class="stat"><div class="n good">单阶段</div><div class="l">无需先拟合奖励模型</div></div>
+        <div class="stat"><div class="n good">无需采样</div><div class="l">微调过程中不必从语言模型采样</div></div>
+        <div class="stat"><div class="n good">轻量稳定</div><div class="l">论文称其稳定、高效，且无需大量超参调优</div></div>
+        <div class="stat"><div class="n good">效果持平或更好</div><div class="l">在与人类偏好对齐上不逊于既有方法</div></div>
+      </div>
+      <p><b>这项工作对应用层的意义在于降低了门槛</b>：偏好对齐从「需要一支 RL 团队」变成了「和 SFT 差不多的一次训练」。今天各类微调框架普遍内置 DPO 训练器，一个小团队可以在几天内跑通。</p>
+      <p><b>但门槛降低的只是训练那一环</b>——真正的成本转移到了<b>偏好数据的收集</b>上。你仍然需要成对的「A 比 B 好」标注，而这需要明确的偏好标准和一致的标注者。<b>当一项技术的某个环节被大幅简化时，瓶颈通常只是移动到了别处，而不是消失了</b>；此处它移到了数据，这与 <a href="5-3-data-engineering.html">5.3</a> 的结论一致。</p>
+      <p><b>条件说明</b>：论文的对比在其选定的任务与基线上进行。DPO 与 RLHF 及后续各类变体的优劣仍是活跃的研究领域，<b>不应把「DPO 全面优于 RLHF」当作定论</b>。对应用层团队而言，可迁移的判断是：<b>需要偏好对齐时，DPO 通常是工程上更可行的起点。</b></p>
+      <div class="src">来源：Rafailov, Sharma, Mitchell, Manning, Ermon, Finn, "Direct Preference Optimization: Your Language Model is Secretly a Reward Model", NeurIPS 2023. 结论引自论文摘要；示意图为本书重绘。</div>
+    </div>
+  </div>
+
+  <h2 style="margin-top:56px">故事线（完）：它真的能用吗</h2>
+
+  <div class="case">
+    <div class="case-head"><span class="cell"></span>工单结构化任务 · 三层验证与上线</div>
+    <div class="case-body">
+      <p><b>① 目标任务：分类别看，而不是看总分。</b>总体准确率 95% 确实超过了教师的 94%。但<b>按类别分桶后暴露了真相</b>——高频类别上学生已经优于教师，而在两个长尾类别上仍明显落后。若只看总分，这个差距会被完全掩盖。</p>
+      <p><b>处理</b>：对这两个长尾类别做<b>专门的数据补充</b>（回到 <a href="5-3-data-engineering.html">5.3</a> 补样本），并在上线方案中加了一条兜底规则——当模型对这两类的预测置信度低于阈值时，<b>路由回教师 API</b>（<a href="2-3-model-routing.html">2.3</a> 的级联思路）。<b>不是所有差距都必须靠训练填平，架构上绕过去往往更快更稳。</b></p>
+
+      <p><b>② 能力回归：发现了一处预期外的退化。</b>用一组与工单无关的通用测试样本跑回归，发现模型在<b>多轮对话的指令遵循</b>上有可察觉的下降——它太习惯于「输入一段文本、输出一个 JSON」，对多轮交互的适应变差了。</p>
+      <p>对当前用途<b>没有影响</b>（这个任务本来就是单轮的），但团队把这一点<b>明确记录在模型卡里</b>：<b>此模型不适用于多轮场景</b>。这条记录后来阻止了另一个团队把它误用在对话产品上。<b>能力回归测试的价值，往往不在于阻止本次上线，而在于划清这个模型的适用边界。</b></p>
+
+      <div class="stats">
+        <div class="stat"><div class="n good">95% / 94%</div><div class="l">学生 / 教师 总体类别准确率</div></div>
+        <div class="stat"><div class="n bad">长尾落后</div><div class="l">两个低频类别仍不及教师，走置信度回退</div></div>
+        <div class="stat"><div class="n good">76% → 95%</div><div class="l">未微调基座 → 微调后，提升确来自训练</div></div>
+        <div class="stat"><div class="n bad">多轮能力↓</div><div class="l">能力回归发现，已写入模型卡限定用途</div></div>
+      </div>
+
+      <p><b>③ 三方对比确认了提升的来源。</b>未微调基座 76%、学生 95%、教师 94%——这组数字同时说明了两件事：提升确实来自微调（而非评估集变简单了），且学生在总体上已达到教师水平。<b>缺少基座这一列，你就无法排除「评估集本身偏易」的可能。</b></p>
+
+      <p><b>④ 上线：影子模式跑了两周。</b>这一步的收获超出预期——真实流量里出现了<b>离线评估集中完全没有的输入形态</b>：超长工单（用户粘贴了整段日志）、多语言混杂、以及几乎空白的工单。这些在历史日志采样中被过滤掉了，却在真实流量里稳定地出现。团队据此补了输入长度截断和空输入的兜底逻辑，然后才开始灰度。</p>
+
+      <p><b>故事线的结论</b>：<b>这个项目最终成立，靠的不是模型训得多好，而是四件事——</b>① 动手前先把便宜的手段榨干并定下退出条件（5.1）；② 选了与任务匹配、留有余量的配置（5.2）；③ 把绝大部分精力花在数据而非调参上（5.3）；④ 用三层验证和影子模式，在真正影响用户之前发现了三处问题（5.4）。<b>其中任何一步偷懒，结局都可能是一个离线 95%、线上翻车的模型。</b></p>
+      <div class="src">说明：本故事线为综合多个真实项目的<b>匿名化叙事</b>，不含任何可识别的公司、产品或个人信息。全部数字为便于演算设定的示例假设，非某次具体实验的测量数据。</div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 工具层 ================= -->
+<section id="tools">
+  <div class="sec-tag"><span class="cell" style="background:var(--free)"></span><span class="lab">Tooling Sidebar 工具层</span></div>
+  <div class="toolbox">
+    <div class="toolbox-head">
+      <span class="t">对齐与验证的工具（会过期，正文不依赖本区块）</span>
+      <span class="date">截至 2026-08</span>
+    </div>
+    <div class="toolbox-body">
+      <p><b>DPO 及其变体</b>：HuggingFace <code>trl</code> 提供 <code>DPOTrainer</code>，Axolotl / LLaMA-Factory 均已集成。社区还有 ORPO、KTO、SimPO 等变体，各自在数据要求或训练稳定性上有取舍。<b>先用 DPO 跑通，再考虑是否需要变体</b>——变体带来的差异通常小于数据质量带来的差异。</p>
+      <p><b>能力回归测试集</b>：可以从公开评测集里取一个小子集（MMLU、IFEval 等各抽一两百条）作为快速回归。<b>不需要跑完整基准</b>——你要检测的是「有没有明显退化」，不是刷榜，几百条足以发现问题且几分钟就能跑完。</p>
+      <p><b>实验追踪</b>：Weights &amp; Biases、MLflow 等记录超参、指标、数据集版本的对应关系。<b>「哪个模型是用哪版数据、哪组超参训的」必须可追溯</b>，否则几轮迭代之后你会完全无法归因。</p>
+      <p><b>模型卡（model card）</b>：为每个微调模型写一份简短说明——训练数据来源与时间范围、目标任务、<b>已知的能力退化与不适用场景</b>、评估结果（分类别）、回退方案。<b>这份文档的主要价值是防止别人误用你的模型</b>，故事线里正是它阻止了一次误用。写它只要半小时。</p>
+      <p><b>影子模式的实现</b>：在服务层把请求复制一份给新模型，异步记录输出但不返回给用户。<b>注意成本</b>——影子期间两个模型都在跑，要计入预算；也要注意<b>幂等性</b>，影子调用绝不能触发任何写操作或副作用。</p>
+    </div>
+  </div>
+</section>
+
+<!-- ================= Quiz ================= -->
+<section id="quiz">
+  <div class="sec-tag"><span class="cell"></span><span class="lab">Quiz 自测</span></div>
+  <h2>章末自测</h2>
+  <div class="quiz">
+
+    <details>
+      <summary><span class="qtype">概念题</span>为什么 eval set 必须按时间切分，而不能从训练数据里随机切一部分出来？</summary>
+      <div class="answer">
+        <p><b>因为随机切分会造成数据泄漏，让评估分数系统性高估。</b></p>
+        <p>真实业务数据里存在大量<b>近似重复</b>——同一模板生成的工单、同一用户的连续提交、批量导入的相似记录。随机切分时，一条样本的「近亲」极可能同时落在训练集和评估集里。模型在训练时见过它的近亲，评估时自然答得很好，<b>但这测的是记忆，不是泛化</b>。</p>
+        <p><b>按时间切分解决两个问题</b>：① <b>天然隔离了近似重复</b>——同一批次产生的相似样本会一起落在同一侧；② <b>额外检验了分布漂移</b>——真实上线面对的永远是「训练之后」的数据，用户行为、产品形态、话题热点都在变。按时间切分的评估更接近上线后的真实条件。</p>
+        <p><b>补充措施</b>：即使按时间切了，仍应<b>跨集合跑一次近似去重检查</b>，确认没有漏网的重复。这一步几分钟就能做完，却能避免「离线 96%、上线翻车」这类最令人困惑的失败。</p>
+      </div>
+    </details>
+
+    <details>
+      <summary><span class="qtype">场景判断</span>微调模型在目标任务上全面超过教师，团队想直接全量替换。你会提出什么？</summary>
+      <div class="answer">
+        <p><b>「全面超过」这个判断本身要先被检验</b>，然后才谈上线方式。四点：</p>
+        <p><b>① 「全面」是按什么口径算的？</b>总体准确率超过，不等于每个子集都超过。<b>必须按类别、按输入长度、按难度分桶分别对比</b>。故事线里正是分桶后才发现长尾类别仍落后于教师——而总分是超过的。</p>
+        <p><b>② 评估集有没有被污染？</b>确认按时间切分，并跨集合做过近似去重检查。一个被污染的评估集会让「超过教师」这个结论毫无意义。</p>
+        <p><b>③ 能力回归做了吗？</b>目标任务超过教师，不代表通用能力没退化。至少要跑一组无关的通用测试，并把发现的退化<b>写进模型卡</b>限定适用范围。</p>
+        <p><b>④ 直接全量替换是最大的问题。</b>正确的路径是<b>影子模式 → 灰度 → 全量</b>：先并行接真实流量只记录不生效（能发现离线评估集里没有的输入形态，故事线里发现了三类），再小比例放量按业务指标观察，最后全量。<b>并且必须保留一键切回教师 API 的通道。</b></p>
+        <p><b>可以补一句架构上的建议</b>：即使全量切换，对模型置信度低的请求保留<b>回退到教师</b>的级联路径——这比「非此即彼」的替换稳健得多，成本增加也有限（<a href="2-3-model-routing.html">2.3</a>）。</p>
+      </div>
+    </details>
+
+    <details>
+      <summary><span class="qtype">面试题改编</span>「SFT 和 DPO 分别解决什么问题？什么时候需要 DPO？」</summary>
+      <div class="answer">
+        <p><b>SFT 教「照着这些示范做」。</b>它需要「输入 → 期望输出」的样本对，适用于<b>有明确对错标准</b>的任务：分类、抽取、结构化输出、特定格式或风格的生成。</p>
+        <p><b>DPO 教「这两个都不错，但这个更好」。</b>它需要成对的偏好数据，适用于<b>「什么算好」难以写成标准答案、但容易做比较</b>的场景：语气拿捏、详略取舍、拒绝请求时的措辞、开放式生成的整体质量。</p>
+        <p><b>核心区别</b>：SFT 从<b>单个正例</b>学习，DPO 从<b>成对的相对比较</b>学习。后者能表达前者表达不了的信息——「A 和 B 都对，但 A 更好」这句话无法用示范样本表示。</p>
+        <p><b>什么时候需要 DPO</b>：<br>• 任务有明确对错 → <b>只需 SFT</b>，这覆盖了应用层的大多数微调项目；<br>• SFT 后模型「都对但就是不太好用」，且你能说清哪个更好却写不出标准答案 → <b>考虑 DPO</b>；<br>• <b>但在此之前先确认 SFT 的数据质量已经榨干</b>——很多被归因为「需要对齐」的问题，实际是 SFT 数据里存在不一致的示范。</p>
+        <p><b>加分</b>：说清 DPO 相对 RLHF 的工程价值——利用奖励函数与最优策略的映射关系，把「拟合奖励模型 + 强化学习」的两阶段流程压成<b>单阶段的策略训练</b>，无需在微调中采样，稳定且轻量。同时点出<b>门槛降低的只是训练环节，瓶颈转移到了偏好数据的收集与标注一致性上</b>。</p>
+      </div>
+    </details>
+
+  </div>
 </section>
 
 <nav class="next">
-  <a href="5-3-data-engineering.html">← 5.3 数据工程：真正的瓶颈</a>
-  <a href="6-1-observability.html">6.1 LLM 应用的可观测性 →</a>
+  <a href="5-3-data-engineering.html">← 5.3 数据工程 — 真正的瓶颈</a>
+  <a href="6-1-observability.html">6.1 可观测性 →</a>
 </nav>
 
 </div>
