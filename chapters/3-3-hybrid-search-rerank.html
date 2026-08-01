@@ -3,7 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>3.3 稠密检索的盲区与两阶段检索 · AI 系统工程手册</title>
+<title>3.3 Embedding、Hybrid Search 与 Rerank · AI 系统工程手册</title>
+<meta name="description" content="稠密检索的盲区、BM25 为什么没死、两阶段检索的分工。">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Noto+Sans+SC:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -20,23 +21,198 @@
 
 <header class="ch">
   <div class="blockrow" aria-hidden="true">
-    <span></span><span></span><span class="f"></span><span class="f"></span><span class="f"></span>
-    <span class="f"></span><span class="f"></span><span class="f"></span><span class="f"></span><span class="f"></span>
+    <span></span><span class="f"></span><span></span><span></span><span class="f"></span>
+    <span></span><span></span><span class="w"></span><span></span><span class="f"></span>
   </div>
   <div class="kicker">Part 3 · RAG &amp; Context 检索与上下文</div>
   <h1>3.3 Hybrid Search &amp; Rerank
     <span class="zh">稠密检索的盲区与两阶段检索</span>
   </h1>
+  <div class="meta">
+    <span>难度 <b>★★☆</b></span>
+    <span>阅读 <b>~14 min</b></span>
+    <span>面试出现频率 <b>高</b></span>
+    <span>前置 <b>3.2 Chunking</b></span>
+  </div>
 </header>
 
+<!-- ================= 核心概念 ================= -->
 <section id="concept">
-  <div class="sec-tag"><span class="cell" style="background:var(--free)"></span><span class="lab">Draft 待撰写</span></div>
-  <p>本章尚未撰写。返回<a href="../index.html">全书目录</a>。</p>
+  <div class="sec-tag"><span class="cell"></span><span class="lab">Core Concept 核心概念</span></div>
+  <h2>向量检索擅长什么，以及它系统性地看不见什么</h2>
+
+  <p><span class="term">embedding</span>（向量嵌入）把文本映射到高维空间中的一个点，语义相近的文本距离相近。基于它的<span class="term">dense retrieval</span>（稠密检索）解决了关键词检索最大的痛点：<b>用户不必说出文档里的那个词</b>。问「怎么把钱要回来」能召回标题为《退款流程》的文档——这是词面匹配永远做不到的。</p>
+
+  <p>但同一个机制也带来了系统性的盲区。理解它们的共同根源很重要：<b>embedding 是一次有损压缩</b>——把一段文本压成几百上千个浮点数，必然丢掉信息，而<b>它优先保留的是「大意」，优先丢弃的是「细节」</b>。于是凡是「细节决定成败」的查询，稠密检索都会失手：</p>
+
+  <div class="tbl-scroll">
+  <table>
+    <thead><tr><th>盲区</th><th>例子</th><th>为什么</th></tr></thead>
+    <tbody>
+      <tr><td><b>精确标识符</b></td><td>订单号 <code>A7X-99210</code>、错误码 <code>ERR_5521</code>、SKU</td><td>这类字符串没有语义，向量空间里几乎随机；且相似编号的向量彼此极近</td></tr>
+      <tr><td><b>罕见专有名词</b></td><td>内部项目代号、新产品名、人名</td><td>embedding 模型训练时没见过，落在向量空间的无意义区域</td></tr>
+      <tr><td><b>否定与限定</b></td><td>「<b>不</b>支持退款的情况」</td><td>「支持退款」与「不支持退款」的向量高度相似——语义相反，字面相近</td></tr>
+      <tr><td><b>领域外泛化</b></td><td>通用模型用在法律 / 医疗 / 内部术语上</td><td>训练分布与使用分布不一致，相似度判断整体失准</td></tr>
+      <tr><td><b>数值与时间</b></td><td>「2023 年 Q3 的数据」</td><td>数值大小关系在向量空间里没有可靠表示</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <p>这就是为什么 <span class="term">BM25</span> 这个 1990 年代的算法今天仍然是每个严肃检索系统的组成部分。它做的事情朴素得多——统计词频、按稀有度加权、按文档长度归一——但正因为它<b>直接匹配字面</b>，上表里的五类盲区它一个都没有。订单号搜订单号，一击必中。</p>
+
+  <div class="callout">
+    <p><b>两者的失败模式是互补的，这才是「混合」的理由。</b>不是「BM25 是弱一点的备胎」，而是<b>它们错的地方不一样</b>：稠密检索在同义改写上强、在精确匹配上弱；BM25 反之。把两个错误不相关的系统组合起来，整体召回率会显著高于任何一个单独使用——这是集成方法的基本原理，与模型强弱无关。</p>
+  </div>
+
+  <h3>混合检索：怎么把两个分数合起来</h3>
+  <p>问题在于两套分数不可直接比较：BM25 的分值范围随语料和查询变化，向量余弦相似度在 [-1,1]，把它们加权求和需要归一化，而归一化参数又需要按数据集调——很脆弱。</p>
+
+  <p>实践中更常用的是 <span class="term">RRF</span>（Reciprocal Rank Fusion，倒数排名融合）：<b>只看排名，不看分数</b>。</p>
+
+  <div class="formula">RRF_score(d) = Σ<sub>各路检索</sub> 1 / (k + rank(d))　　（k 为常数，常取 60）<br><br>例：文档 D 在向量检索中排第 2、在 BM25 中排第 5<br>　　RRF = 1/(60+2) + 1/(60+5) = 0.0161 + 0.0154 = <b>0.0315</b><br><br>优点：无需归一化、无需调权重、对分数尺度不敏感<br>代价：丢弃了分数中的强度信息（「排第一但相似度很低」与「排第一且极其相似」被同等对待）</div>
+
+  <p>RRF 的价值在于<b>它几乎不需要调参就能工作</b>，非常适合作为第一版。当你有了评估集（<a href="3-5-rag-eval.html">3.5</a>），再考虑是否值得换成需要调参的加权融合。</p>
+
+  <h3>两阶段检索：召回要广，排序要准</h3>
+  <p>检索系统面对一个规模上的矛盾：索引里可能有几百万个 chunk，而最终只能送 5 个进上下文。用一个足够精确的模型去逐一评估几百万个候选，成本上不可能。</p>
+
+  <p>解法是分两个阶段，用两种结构不同的模型：</p>
+
+  <figure>
+    <svg viewBox="0 0 760 300" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="两阶段检索漏斗与双塔、交叉编码器结构对比">
+      <text x="20" y="24" class="lbl">两阶段检索：先广后精</text>
+      <!-- funnel -->
+      <rect x="20" y="40" width="300" height="34" rx="4" fill="var(--free)"/>
+      <text x="170" y="62" text-anchor="middle" class="mn">全部索引　~1,000,000 chunk</text>
+      <path d="M60 78 L110 100" stroke="var(--ink-soft)" stroke-width="2"/>
+      <rect x="60" y="104" width="220" height="34" rx="4" fill="var(--alloc)"/>
+      <text x="170" y="126" text-anchor="middle" class="onfill">召回 recall　~100 条</text>
+      <text x="292" y="126" class="sub">向量 + BM25，快而粗</text>
+      <path d="M110 142 L140 164" stroke="var(--ink-soft)" stroke-width="2"/>
+      <rect x="100" y="168" width="140" height="34" rx="4" fill="var(--waste)"/>
+      <text x="170" y="190" text-anchor="middle" class="onfill">重排 rerank　~5 条</text>
+      <text x="252" y="190" class="sub">交叉编码器，慢而准</text>
+
+      <!-- bi vs cross -->
+      <text x="400" y="24" class="lbl">两种打分结构</text>
+      <text x="400" y="52" class="sub">双塔 bi-encoder — 可预先算好</text>
+      <rect x="400" y="60" width="100" height="28" rx="4" fill="var(--alloc-soft)" stroke="var(--alloc)"/>
+      <text x="450" y="79" text-anchor="middle" class="mn">query→向量</text>
+      <rect x="520" y="60" width="100" height="28" rx="4" fill="var(--alloc-soft)" stroke="var(--alloc)"/>
+      <text x="570" y="79" text-anchor="middle" class="mn">doc→向量</text>
+      <path d="M450 92 L510 110" stroke="var(--ink-soft)" stroke-width="2"/>
+      <path d="M570 92 L530 110" stroke="var(--ink-soft)" stroke-width="2"/>
+      <rect x="470" y="114" width="110" height="26" rx="4" fill="var(--alloc)"/>
+      <text x="525" y="132" text-anchor="middle" class="onfill">算距离</text>
+      <text x="400" y="160" class="mn">doc 向量可离线批量算好 → 检索时极快</text>
+      <text x="400" y="178" class="mn">代价：query 和 doc 从未「见过」对方</text>
+
+      <text x="400" y="216" class="sub">交叉编码器 cross-encoder — 必须实时算</text>
+      <rect x="400" y="224" width="220" height="28" rx="4" fill="var(--waste-soft)" stroke="var(--waste)"/>
+      <text x="510" y="243" text-anchor="middle" class="mn">[query + doc] 一起进模型</text>
+      <path d="M510 256 L510 268" stroke="var(--ink-soft)" stroke-width="2"/>
+      <rect x="455" y="270" width="110" height="26" rx="4" fill="var(--waste)"/>
+      <text x="510" y="288" text-anchor="middle" class="onfill">相关性分数</text>
+      <text x="640" y="252" class="mn">能捕捉</text>
+      <text x="640" y="270" class="mn">细粒度</text>
+      <text x="640" y="288" class="mn">交互</text>
+    </svg>
+    <figcaption><b>图 1 · 漏斗结构与两种打分模型。</b>双塔结构把 query 和 doc 分开编码，doc 向量得以离线预计算——这是能在百万级索引上做实时检索的<b>唯一原因</b>，但也意味着打分时两者从未真正交互。交叉编码器让二者在模型内部逐词交互，精度高得多，代价是<b>每个候选都要跑一次模型</b>，只能用在几十到几百条的小集合上。</figcaption>
+  </figure>
+
+  <p>两阶段的分工由此清晰：<b>第一阶段的目标是「别漏」（recall），第二阶段的目标是「排对」（precision）</b>。它们的失败也要分开衡量——第一阶段没召回的东西，重排再强也救不回来。</p>
+
+  <p><b>一个常被忽略的调参点</b>：召回数量（通常记作 top-k）该取多少？取小了，正确答案根本进不了重排阶段；取大了，重排的延迟和成本线性上升。这个值应该由「召回率随 k 的变化曲线」来定——找到召回率开始平坦的那个 k，而不是拍一个 20。</p>
+</section>
+
+<!-- ================= 案例 ================= -->
+<section id="case">
+  <div class="sec-tag"><span class="cell" style="background:var(--waste)"></span><span class="lab">Case Study 真实案例</span></div>
+  <h2>BEIR：把稠密检索拉到陌生领域里测</h2>
+
+  <div class="case">
+    <div class="case-head"><span class="cell"></span>BEIR: A Heterogeneous Benchmark for Zero-shot Evaluation of IR Models (NeurIPS 2021)</div>
+    <div class="case-body">
+      <p>在 BEIR 之前，检索模型大多在同分布的数据集上评测——训练和测试来自同一个领域，稠密检索的表现自然亮眼。Thakur 等人换了个问法：<b>把模型放到它没见过的领域里，还行不行？</b></p>
+      <div class="stats">
+        <div class="stat"><div class="n">18</div><div class="l">覆盖的公开数据集（多领域、多任务）</div></div>
+        <div class="stat"><div class="n">10</div><div class="l">评测的检索系统（词法/稀疏/稠密/后交互/重排）</div></div>
+        <div class="stat"><div class="n good">BM25</div><div class="l">被证明是一个稳健的基线</div></div>
+        <div class="stat"><div class="n good">重排类最优</div><div class="l">零样本表现最好，但计算成本高</div></div>
+      </div>
+      <p>论文的三条结论几乎逐条对应了本章的工程主张：</p>
+      <p><b>① BM25 是稳健的基线。</b>这个没有任何神经网络的算法，在跨领域场景下依然难以被轻易超越——因为它<b>不需要泛化</b>，它只是在数词。这直接支持了「不要丢掉词法检索」的实践。</p>
+      <p><b>② 基于重排的方案取得了整体最好的零样本表现，但计算成本高昂。</b>这正是两阶段架构存在的理由——把昂贵的精确打分限制在少量候选上，让它的成本变得可以承受。</p>
+      <p><b>③ 稠密检索模型计算上更高效，但常常表现不及其他方法，泛化能力有相当大的改进空间。</b></p>
+      <p><b>对工程的直接含义</b>：<b>公开榜单上的 embedding 模型排名，对你的领域可能没有参考价值</b>——那些分数大多在模型见过的分布上测得。如果你的场景涉及内部术语、专有名词或小众领域，务必假设稠密检索的表现会明显低于榜单，并<b>在自己的数据上重测</b>。这也解释了为什么「换一个榜单排名更高的 embedding 模型」经常带不来预期的改善。</p>
+      <div class="src">来源：Thakur, Reimers, Rücklé, Srivastava, Gurevych, "BEIR: A Heterogeneous Benchmark for Zero-shot Evaluation of Information Retrieval Models", NeurIPS 2021 Datasets and Benchmarks Track. 结论引自论文摘要。</div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 工具层 ================= -->
+<section id="tools">
+  <div class="sec-tag"><span class="cell" style="background:var(--free)"></span><span class="lab">Tooling Sidebar 工具层</span></div>
+  <div class="toolbox">
+    <div class="toolbox-head">
+      <span class="t">检索组件选型要点（会过期，正文不依赖本区块）</span>
+      <span class="date">截至 2026-08</span>
+    </div>
+    <div class="toolbox-body">
+      <p><b>Embedding 模型</b>：开源侧有 BGE、E5、GTE 等系列（含多语言版本），闭源侧各厂商均有对应 API。选型关注三点：<b>是否支持你的语言</b>、<b>向量维度</b>（直接决定存储与检索成本，且高维不总是更好）、<b>最大输入长度</b>（须 ≥ 你的 chunk 大小，否则会被静默截断——这是一个很隐蔽的 bug）。</p>
+      <p><b>Rerank 模型</b>：开源侧 BGE-reranker 等，闭源侧多家提供 rerank API。它们通常比 embedding 模型小，但因为要对每个候选跑一次前向，延迟与候选数成正比。<b>务必把 rerank 的延迟计入 TTFT 预算</b>（<a href="2-1-latency-metrics.html">2.1</a>）。</p>
+      <p><b>混合检索的实现</b>：Elasticsearch / OpenSearch 原生同时支持 BM25 与向量检索并内置 RRF；PostgreSQL 可用全文索引 + pgvector 组合；多数专用向量库也已支持稀疏-稠密混合。<b>如果你已经有 Elasticsearch，混合检索几乎是免费的</b>——这常常是比引入新组件更优的路径。</p>
+      <p><b>别忘了元数据过滤</b>：时间范围、权限、文档类型的过滤应该在检索层完成，而不是召回后再筛（后者会导致「过滤完不够 5 条」）。这一点对企业场景尤其关键，也是选型时最该确认的能力之一。</p>
+      <p><b>换 embedding 模型 = 全量重建索引</b>：不同模型的向量空间不通用。这意味着换模型的成本远不止调用费，还包括全量重新编码的时间与费用。<b>选型时就要把这个迁移成本考虑进去。</b></p>
+    </div>
+  </div>
+</section>
+
+<!-- ================= Quiz ================= -->
+<section id="quiz">
+  <div class="sec-tag"><span class="cell"></span><span class="lab">Quiz 自测</span></div>
+  <h2>章末自测</h2>
+  <div class="quiz">
+
+    <details>
+      <summary><span class="qtype">场景判断</span>用户搜「订单 A7X-99210 为什么没发货」，纯向量检索完全找不到这个订单的记录，但语义相近的其他订单记录排在前面。原因是什么？怎么修？</summary>
+      <div class="answer">
+        <p><b>原因</b>：<code>A7X-99210</code> 是一个无语义的标识符。embedding 模型没有为它学到任何有意义的表示，它在向量空间中的位置基本是任意的；更糟的是，<b>所有格式相似的订单号会被编码到彼此很近的位置</b>——因为模型看到的是「一串字母数字」这个模式，而不是具体数值。于是检索返回的是「长得像订单查询」的其他记录。</p>
+        <p><b>修法，按优先级</b>：</p>
+        <p><b>① 混合检索。</b>加入 BM25——精确的标识符正是它的强项，一击必中。这是最直接的修复。</p>
+        <p><b>② 更好的做法：这根本不该走检索。</b>「查订单 A7X-99210 的状态」是一次结构化查询，应该由模型识别出订单号后<b>调用订单查询接口</b>（<a href="4-1-tool-use.html">4.1</a>）。检索返回的是文档，而用户要的是当前状态——即使检索成功，索引里的数据也可能已经过期。</p>
+        <p><b>③ 如果确实要走检索</b>：把标识符作为<b>元数据字段</b>做精确过滤，而不是指望它出现在向量里。</p>
+        <p><b>记住这条判断线</b>：<b>凡是能被精确查询到的东西，都不要交给近似检索。</b>向量检索是为「我说不清但大概是这个意思」准备的，不是为「我知道确切的 ID」准备的。</p>
+      </div>
+    </details>
+
+    <details>
+      <summary><span class="qtype">概念题</span>为什么交叉编码器（cross-encoder）精度更高，却不能直接用来做全库检索？</summary>
+      <div class="answer">
+        <p><b>精度高的原因</b>：它把 query 和 document <b>拼在一起</b>送进模型，二者在每一层注意力中充分交互，模型可以捕捉「这个词是否回应了那个词」这类细粒度关系。双塔结构则是分别编码后只算一次距离——两个向量在生成时<b>互相看不见</b>，任何交互信息都在压缩中丢失了。</p>
+        <p><b>不能全库用的原因</b>：交叉编码器的分数<b>依赖于具体的 query</b>，因此无法预计算。给定一个新 query，要对 N 个文档打分就得跑 N 次模型前向。索引有一百万个 chunk，就要跑一百万次——延迟和成本都不可能接受。</p>
+        <p><b>双塔的关键优势正在于此</b>：doc 向量与 query 无关，可以<b>离线批量算好并建索引</b>；线上只需编码 query 一次，再做一次近似最近邻搜索。这个「可预计算」的性质，才是它能支撑大规模检索的根本原因——不是它更快，而是它把大部分工作挪到了线下。</p>
+        <p><b>所以两阶段架构不是折中，而是必然</b>：用可预计算的模型把候选缩到几百条，再用不可预计算但精确的模型排序。</p>
+      </div>
+    </details>
+
+    <details>
+      <summary><span class="qtype">面试题改编</span>「都 2026 年了，为什么检索系统还在用 BM25 这种九十年代的算法？」</summary>
+      <div class="answer">
+        <p>因为<b>它和稠密检索的失败模式不重叠</b>，而不是因为它更好或更差。</p>
+        <p><b>BM25 的不可替代之处</b>：① <b>精确匹配</b>——标识符、错误码、专有名词、罕见词，向量检索的系统性盲区；② <b>零训练、零领域适配</b>——它不需要泛化，因此不存在「领域外表现下降」的问题；③ <b>完全可解释</b>——匹配了哪些词、各自权重多少，一目了然，这对排查问题极其重要；④ <b>成本极低</b>——倒排索引成熟到不需要讨论。</p>
+        <p><b>实证支持</b>：BEIR 基准（NeurIPS 2021）在 18 个跨领域数据集上评测 10 种检索系统，结论之一就是 BM25 是一个稳健的基线，而稠密检索模型虽然计算高效，却常常表现不及其他方法、泛化能力有较大改进空间。</p>
+        <p><b>正确的心智模型</b>：这不是「新技术淘汰旧技术」，而是<b>两种召回机制的集成</b>。就像推荐系统会同时用协同过滤和内容特征——组合多个错误不相关的弱信号，效果强于单独优化其中任何一个。</p>
+        <p><b>加分</b>：主动提到混合检索的融合方式（RRF 免调参、加权融合需归一化），以及「换更强的 embedding 模型」经常不如「加一路 BM25」来得有效。</p>
+      </div>
+    </details>
+
+  </div>
 </section>
 
 <nav class="next">
-  <a href="3-2-chunking.html">← 3.2 切分策略与它的边界情况</a>
-  <a href="3-4-rag-vs-long-context.html">3.4 长上下文与 RAG 的边界 →</a>
+  <a href="3-2-chunking.html">← 3.2 Chunking 策略</a>
+  <a href="3-4-rag-vs-long-context.html">3.4 RAG 是错误答案的时候 →</a>
 </nav>
 
 </div>

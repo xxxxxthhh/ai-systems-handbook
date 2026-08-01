@@ -3,7 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>3.5 检索指标与生成指标分离评估 · AI 系统工程手册</title>
+<title>3.5 RAG 评估 · AI 系统工程手册</title>
+<meta name="description" content="检索指标与生成指标为什么必须分离评估。">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Noto+Sans+SC:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -20,23 +21,197 @@
 
 <header class="ch">
   <div class="blockrow" aria-hidden="true">
-    <span></span><span></span><span class="f"></span><span class="f"></span><span class="f"></span>
-    <span class="f"></span><span class="f"></span><span class="f"></span><span class="f"></span><span class="f"></span>
+    <span></span><span></span><span></span><span></span><span class="w"></span>
+    <span></span><span></span><span></span><span class="f"></span><span class="f"></span>
   </div>
   <div class="kicker">Part 3 · RAG &amp; Context 检索与上下文</div>
   <h1>3.5 RAG Evaluation
     <span class="zh">检索指标与生成指标分离评估</span>
   </h1>
+  <div class="meta">
+    <span>难度 <b>★★☆</b></span>
+    <span>阅读 <b>~13 min</b></span>
+    <span>面试出现频率 <b>中高</b></span>
+    <span>前置 <b>3.1 – 3.4</b></span>
+  </div>
 </header>
 
+<!-- ================= 核心概念 ================= -->
 <section id="concept">
-  <div class="sec-tag"><span class="cell" style="background:var(--free)"></span><span class="lab">Draft 待撰写</span></div>
-  <p>本章尚未撰写。返回<a href="../index.html">全书目录</a>。</p>
+  <div class="sec-tag"><span class="cell"></span><span class="lab">Core Concept 核心概念</span></div>
+  <h2>端到端分数是一个不可行动的指标</h2>
+
+  <p>大多数团队评估 RAG 的方式是：准备一批问题，跑一遍，人工或用模型给最终答案打分，得到一个「准确率 72%」。这个数字唯一的用途是汇报，<b>它无法指导任何一次优化</b>——因为它不告诉你那 28% 错在哪个环节。</p>
+
+  <p>RAG 是一条串联的流水线，端到端失败可能来自任何一段。而<b>不同环节的修复手段完全没有交集</b>：检索没召回，调 prompt 无用；模型误读材料，换 embedding 模型无用。把这些混在一个分数里，等于把发动机、变速箱和轮胎的故障合并成一个「车不太好开」的指标。</p>
+
+  <div class="formula"><b>最小可行的拆分：两个问题，四个象限</b><br><br>问题一：<b>正确答案在召回结果里吗？</b>（检索质量）<br>问题二：<b>模型的回答忠实于召回内容吗？</b>（生成质量）<br><br>这两个问题各自可独立测量，且合起来覆盖了绝大多数失败模式。</div>
+
+  <figure>
+    <svg viewBox="0 0 760 300" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="检索与生成两个维度构成的失败归因矩阵">
+      <text x="20" y="24" class="lbl">失败归因矩阵：先定位环节，再谈优化</text>
+
+      <text x="30" y="100" class="sub">生成</text>
+      <text x="30" y="118" class="sub">忠实</text>
+      <text x="30" y="216" class="sub">生成</text>
+      <text x="30" y="234" class="sub">不忠实</text>
+      <text x="200" y="290" text-anchor="middle" class="sub">检索失败（没召回）</text>
+      <text x="530" y="290" text-anchor="middle" class="sub">检索成功（召回了）</text>
+
+      <!-- top-left: retrieval fail, faithful -->
+      <rect x="90" y="50" width="290" height="105" rx="6" fill="var(--waste-soft)" stroke="var(--waste)"/>
+      <text x="108" y="76" class="lbl">忠实地答错</text>
+      <text x="108" y="100" class="mn">材料里没有 → 模型照着错材料答，</text>
+      <text x="108" y="118" class="mn">或干脆编一个</text>
+      <text x="108" y="142" class="sub">→ 修检索：切分、混合检索、top-k</text>
+
+      <!-- top-right: retrieval ok, faithful -->
+      <rect x="400" y="50" width="330" height="105" rx="6" fill="var(--alloc)"/>
+      <text x="418" y="76" class="lbl" fill="var(--on-fill)">正确</text>
+      <text x="418" y="100" class="onfill">召回到位，回答忠实于材料</text>
+      <text x="418" y="142" class="onfill">→ 这才是系统正常工作的样子</text>
+
+      <!-- bottom-left -->
+      <rect x="90" y="166" width="290" height="100" rx="6" fill="var(--waste)"/>
+      <text x="108" y="192" class="lbl" fill="var(--on-fill)">双重失败</text>
+      <text x="108" y="216" class="onfill">没召回，且回答也脱离材料</text>
+      <text x="108" y="252" class="onfill">→ 先修检索，再看生成</text>
+
+      <!-- bottom-right -->
+      <rect x="400" y="166" width="330" height="100" rx="6" fill="var(--waste-soft)" stroke="var(--waste)"/>
+      <text x="418" y="192" class="lbl">材料在手却答错</text>
+      <text x="418" y="216" class="mn">忽略材料 / 误读 / 位置太靠中间</text>
+      <text x="418" y="252" class="sub">→ 修生成：rerank、prompt、减少召回数</text>
+    </svg>
+    <figcaption><b>图 1 · 归因矩阵。</b>四个象限对应四套完全不同的修复动作。<b>没有这个拆分，任何优化都是碰运气</b>——而团队通常会本能地去调 prompt，因为那是最容易改的地方，尽管它只对右下角一个象限有效。</figcaption>
+  </figure>
+
+  <h3>检索层：用信息检索的经典指标</h3>
+  <p>这一层不需要发明新东西，信息检索领域已经把指标打磨了几十年。关键是选对：</p>
+
+  <div class="tbl-scroll">
+  <table>
+    <thead><tr><th>指标</th><th>衡量什么</th><th>什么时候用它</th></tr></thead>
+    <tbody>
+      <tr><td><b>Recall@k</b></td><td>前 k 个结果中是否包含正确材料</td><td><b>RAG 最重要的检索指标</b>。因为召回不到就彻底没救了，而排序问题还能靠 rerank 补</td></tr>
+      <tr><td><b>MRR</b><br>平均倒数排名</td><td>正确材料排在第几位</td><td>关心「是否排在最前面」时；对只送 top-3 的系统尤其重要</td></tr>
+      <tr><td><b>nDCG@k</b></td><td>考虑多档相关性的排序质量</td><td>有多个不同相关程度的正确材料时</td></tr>
+      <tr><td><b>Precision@k</b></td><td>前 k 个里有多少是相关的</td><td>关心噪声——无关材料会挤占上下文并干扰生成</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <p><b>实践建议：主看 Recall@k，辅看 MRR。</b>先用 Recall@20 确认「材料到底进没进候选池」，再用 MRR 或 Recall@3 确认「重排后有没有排到能被送进 prompt 的位置」。这两个数一起看，能立刻区分是<b>召回问题</b>还是<b>排序问题</b>——而这两者的修法完全不同。</p>
+
+  <h3>生成层：核心指标是 groundedness</h3>
+  <p>生成层最重要的指标不是「答得对不对」，而是 <span class="term">groundedness</span>（也称 faithfulness，忠实度）：<b>回答中的每一个事实性陈述，是否都能在召回的材料里找到依据？</b></p>
+
+  <p>为什么它比「正确性」更重要？因为<b>它是可自动化、可归因的</b>。正确性需要标准答案，且答对了也可能是模型碰巧知道（而非用了材料）；忠实度只需要对比回答与材料，可以用模型自动判定，且它直接测量了 RAG 系统<b>是否真的在按 RAG 的方式工作</b>。</p>
+
+  <p>配合两个辅助指标：<b>answer relevance</b>（回答是否切题——防止模型输出一堆忠实但答非所问的内容）和<b>拒答率</b>（材料不足时是否老实说「资料中未提及」，见 <a href="6-3-hallucination.html">6.3</a>）。</p>
+
+  <div class="callout">
+    <p><b>一个反直觉但重要的原则：不要用生成质量去反推检索质量。</b>「答案对了所以检索是好的」这个推论不成立——模型可能靠参数化知识蒙对了，此时检索其实失效了，而你的指标看不见。同理，「答案错了所以检索差」也不成立。<b>两层必须各自独立测量，用各自的标注。</b></p>
+  </div>
+
+  <h3>Golden set：整件事的地基</h3>
+  <p>上面所有指标都需要一个标注好的评估集。它的构建质量决定了评估的价值，而这里有三条经验：</p>
+
+  <p><b>① 从真实失败案例开始，而不是从想象的问题开始。</b>最有价值的评估集来自线上：用户重问的、点踩的、转人工的。这些是系统真实的弱点分布。凭空编写的问题往往集中在系统本来就擅长的区域。</p>
+
+  <p><b>② 规模不必大，覆盖必须全。</b>100 条精心挑选、覆盖各类查询形态（精确查找、模糊语义、多跳、否定、超纲）的样本，价值远高于 1000 条同质化样本。<b>关键是每一类失败模式至少有几条代表。</b></p>
+
+  <p><b>③ 检索标注是逐 chunk 的，不是逐问题的。</b>标注要记录「哪些 chunk 是这个问题的正确材料」，才能算 Recall。这一步是体力活，但没有它检索层就无法量化——<b>这也是绝大多数团队卡住的地方，值得咬牙做掉</b>。可以先用模型辅助标注、人工复核来降低成本。</p>
+</section>
+
+<!-- ================= 案例 ================= -->
+<section id="case">
+  <div class="sec-tag"><span class="cell" style="background:var(--waste)"></span><span class="lab">Case Study 案例</span></div>
+  <h2>一次因为没分层而白干三周的优化（匿名化）</h2>
+
+  <div class="case">
+    <div class="case-head"><span class="cell"></span>知识库问答 · 换了两次 embedding 模型都没用</div>
+    <div class="case-body">
+      <p><b>背景</b>：内部知识库问答，人工抽样评估显示答案准确率约 65%，团队定下「提到 85%」的目标。</p>
+      <p><b>第一轮（两周）</b>：判断是检索不准，换用榜单排名更高的 embedding 模型并重建索引。上线后人工评估——准确率约 66%。<b>在误差范围内，等于没变。</b></p>
+      <p><b>第二轮（一周）</b>：怀疑是模型太弱，换成更大的生成模型。准确率约 68%。有一点提升，但成本涨了数倍，且离目标依然很远。</p>
+      <p><b>转折</b>：一位工程师停下来做了件本该最先做的事——<b>拿 50 个失败案例，把每个案例召回的 chunk 原文打印出来，逐条人工标注「正确材料在不在里面」</b>。半天的工作量，结果让所有人意外：</p>
+      <div class="stats">
+        <div class="stat"><div class="n good">~90%</div><div class="l">Recall@10：正确材料其实召回到了</div></div>
+        <div class="stat"><div class="n bad">~55%</div><div class="l">Recall@3：但它经常排在第 4 位之后</div></div>
+        <div class="stat"><div class="n bad">3</div><div class="l">而系统只把 top-3 送进 prompt</div></div>
+      </div>
+      <p><b>真正的瓶颈是排序，不是召回，更不是生成。</b>换 embedding 模型改善的是召回，而召回本来就有 90%——难怪没有效果。换更大的生成模型是在给一个拿不到材料的模型加算力，同样无效。<b>两轮优化都作用在了没有问题的环节上。</b></p>
+      <p><b>修复</b>：加一个 rerank 阶段，召回 20 条后重排取前 3。这个改动的工作量约一天，Recall@3 从约 55% 提升到接近 Recall@20 的水平，端到端准确率随之显著改善。此外把 top-k 从 3 调到 5 也带来了额外收益——代价是每次调用多花一些 token。</p>
+      <p><b>三条教训</b>：<br><b>①</b> 三周的返工，本可以用<b>半天的分层标注</b>避免。分层评估的成本远低于盲目优化的成本。<br><b>②</b> 「换个更强的组件」是最容易想到、也最容易白费的动作——<b>它假设你已经知道瓶颈在哪</b>，而这个假设通常没被验证过。<br><b>③</b> Recall@10 与 Recall@3 之间的落差是一个极有信息量的信号：<b>两者差距大 = 排序问题（上 rerank）；两者都低 = 召回问题（改切分、加 BM25）；两者都高但答错 = 生成问题</b>。这三个数是排查 RAG 的第一现场。</p>
+      <div class="src">说明：本案例为综合多个真实项目的<b>匿名化复盘</b>，不含任何可识别的公司或个人信息。文中百分比为示意性描述，用于说明排查逻辑，非某次具体实验的测量数据。</div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 工具层 ================= -->
+<section id="tools">
+  <div class="sec-tag"><span class="cell" style="background:var(--free)"></span><span class="lab">Tooling Sidebar 工具层</span></div>
+  <div class="toolbox">
+    <div class="toolbox-head">
+      <span class="t">评估工具与实操（会过期，正文不依赖本区块）</span>
+      <span class="date">截至 2026-08</span>
+    </div>
+    <div class="toolbox-body">
+      <p><b>RAG 专用评估库</b>：RAGAS、TruLens、DeepEval 等提供了 groundedness / answer relevance / context precision 等开箱即用的指标实现，多数基于 LLM-as-judge。<b>用它们之前必须先校准</b>——拿几十条人工标注过的样本，检查工具的判定与人工判定的一致率。一致率低于八成的指标不值得信任（LLM 评委的问题详见 <a href="6-4-eval-pipeline.html">6.4</a>）。</p>
+      <p><b>检索指标</b>：不需要专用工具，<code>Recall@k</code>、<code>MRR</code> 都是几行代码的事。真正的成本在标注，不在计算。</p>
+      <p><b>降低标注成本的实操路径</b>：① 用模型为每个 chunk 生成「这段能回答什么问题」，反向构造问题-材料对，人工快速复核；② 把线上用户点击/采纳的引用作为弱标注信号；③ 只精标失败案例，成功案例抽样标。<b>不要等「完美的评估集」——先有 50 条能用的，比三个月后有 500 条完美的更有价值。</b></p>
+      <p><b>接入 CI</b>：把 golden set 跑成一个可重复的脚本，每次改动切分策略、embedding 模型、prompt、top-k 都跑一遍并记录全部分层指标。<b>RAG 系统的改动极易「修好一处、弄坏两处」</b>，没有回归测试根本发现不了。</p>
+      <p><b>务必分桶看指标</b>：按查询类型（事实查找 / 汇总 / 多跳）分开统计。整体指标会把某一类的崩塌平均掉——常见情形是事实查找 95%、多跳查询 30%，平均下来是「还不错的 70%」。</p>
+    </div>
+  </div>
+</section>
+
+<!-- ================= Quiz ================= -->
+<section id="quiz">
+  <div class="sec-tag"><span class="cell"></span><span class="lab">Quiz 自测</span></div>
+  <h2>章末自测</h2>
+  <div class="quiz">
+
+    <details>
+      <summary><span class="qtype">场景判断</span>三组分层指标各指向什么问题、该怎么修？A. Recall@20 = 45%；B. Recall@20 = 92%、Recall@3 = 50%；C. Recall@3 = 88%、groundedness = 60%。</summary>
+      <div class="answer">
+        <p><b>A · 召回问题。</b>正确材料压根没进候选池，后面所有环节都无力回天。排查顺序：① <b>先看切分</b>——把失败案例的正确材料找出来，检查它是否被切碎了（<a href="3-2-chunking.html">3.2</a>）；② <b>加 BM25 混合检索</b>——若失败查询含标识符、专有名词或否定，这是稠密检索的系统性盲区（<a href="3-3-hybrid-search-rerank.html">3.3</a>）；③ 确认 embedding 模型的最大输入长度 ≥ chunk 大小（超出会被静默截断）；④ 最后才考虑换 embedding 模型。</p>
+        <p><b>B · 排序问题。</b>材料在候选池里，但排不进能被送进 prompt 的位置。<b>这是投入产出比最高的一类问题</b>：加 rerank 阶段（召回 20 重排取 3），通常能把 Recall@3 拉到接近 Recall@20 的水平。同时可以试着把 top-k 从 3 调到 5——但注意 <a href="3-4-rag-vs-long-context.html">3.4</a> 的提醒，召回太多反而会把关键材料挤到上下文中间。</p>
+        <p><b>C · 生成问题。</b>材料到位了，模型却没忠实使用。排查：① <b>prompt 是否明确要求「仅依据给定材料回答，材料未提及则说明」</b>；② 上下文是否太长、关键材料是否落在中间位置；③ 材料之间是否存在<b>矛盾</b>（模型面对冲突材料时容易自由发挥）；④ 是否需要要求模型输出引用编号——强制引用会显著提升忠实度，也让问题可自动检测。</p>
+        <p><b>通用心法</b>：这三个数（Recall@20 / Recall@3 / groundedness）是 RAG 的「三视图」，任何优化前先看它们，能省掉大量无效工作。</p>
+      </div>
+    </details>
+
+    <details>
+      <summary><span class="qtype">概念题</span>为什么 groundedness（忠实度）比「答案正确率」更适合作为生成层的核心指标？</summary>
+      <div class="answer">
+        <p><b>① 可自动化。</b>忠实度只需比对回答与召回材料，不需要标准答案，可以用模型自动判定并规模化运行。正确率需要为每个问题准备标准答案，成本高且难以覆盖开放式问题。</p>
+        <p><b>② 可归因。</b>忠实度直接衡量「模型有没有按 RAG 的方式工作」。它低，就是生成环节的问题，指向明确。正确率低则可能来自六个环节中的任何一个。</p>
+        <p><b>③ 它能识破「蒙对」。</b>模型可能靠参数化知识答对而完全没用材料——正确率看起来很好，但系统实际上并没有在做 RAG，一旦遇到模型不知道的私有知识就会崩。忠实度能暴露这种虚假的健康。</p>
+        <p><b>④ 它对应真实的业务风险。</b>企业场景中「答案有据可查」往往比「答案恰好正确」更重要——尤其在法律、医疗、金融领域，不可溯源的正确答案同样不可用。</p>
+        <p><b>但不能只看它</b>：一个只会回答「材料中未提及」的系统，忠实度 100%，却毫无用处。必须配合 <b>answer relevance</b> 和<b>拒答率</b>一起看——三者构成一组相互制衡的指标。</p>
+      </div>
+    </details>
+
+    <details>
+      <summary><span class="qtype">架构评审</span>某团队的 RAG 评估方案：每周从线上随机抽 100 条问答，由两位工程师人工打分（好/中/差），记录「好」的比例作为质量指标。指出问题并给出改进。</summary>
+      <div class="answer">
+        <p><b>问题一：不分层，不可行动。</b>「好/中/差」是端到端评分，无法定位环节。这是最根本的缺陷——指标掉了也不知道该改什么。<b>改进</b>：至少拆成 Recall@k 与 groundedness 两层。</p>
+        <p><b>问题二：随机抽样浪费了标注预算。</b>线上大部分请求是系统本来就做得好的简单查询，随机抽 100 条可能有 80 条毫无信息量。<b>改进</b>：分层抽样——按查询类型分桶，并<b>加权抽取失败信号强的样本</b>（用户重问、点踩、转人工）。</p>
+        <p><b>问题三：每周换样本，不可比。</b>这周 72% 和上周 68% 的差异，可能完全来自样本难度差异而非系统变化。<b>改进</b>：建立<b>固定的 golden set</b> 用于版本间对比（回归），另用滚动抽样监控线上分布漂移。<b>两个用途需要两套数据，不能混用。</b></p>
+        <p><b>问题四：无标注一致性校验。</b>两位工程师对「中」的理解可能差异很大。<b>改进</b>：写明评分标准，定期做一致性检查（同一批样本双盲标注比对）。</p>
+        <p><b>问题五：只在事后评估，不进 CI。</b>每周一次意味着一个退化最多可能上线七天。<b>改进</b>：把 golden set 做成自动化脚本接入发布流程，任何影响 RAG 的改动都必须跑一遍并比对分层指标。</p>
+        <p><b>问题六：没有区分「评估」与「监控」。</b>golden set 回答「这次改动好不好」，线上指标回答「现在是不是正常」。两者的数据来源、频率、告警方式都不同（见 <a href="6-4-eval-pipeline.html">6.4</a>）。</p>
+      </div>
+    </details>
+
+  </div>
 </section>
 
 <nav class="next">
-  <a href="3-4-rag-vs-long-context.html">← 3.4 长上下文与 RAG 的边界</a>
-  <a href="4-1-tool-use.html">4.1 function calling 的本质与 schema 设计 →</a>
+  <a href="3-4-rag-vs-long-context.html">← 3.4 RAG 是错误答案的时候</a>
+  <a href="4-1-tool-use.html">4.1 Tool Use 基础 →</a>
 </nav>
 
 </div>

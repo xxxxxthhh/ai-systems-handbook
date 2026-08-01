@@ -3,7 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>3.4 长上下文与 RAG 的边界 · AI 系统工程手册</title>
+<title>3.4 RAG 是错误答案的时候 · AI 系统工程手册</title>
+<meta name="description" content="长上下文与 RAG 的成本、质量边界，以及什么时候该直接塞上下文。">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Noto+Sans+SC:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -20,23 +21,180 @@
 
 <header class="ch">
   <div class="blockrow" aria-hidden="true">
-    <span></span><span></span><span class="f"></span><span class="f"></span><span class="f"></span>
-    <span class="f"></span><span class="f"></span><span class="f"></span><span class="f"></span><span class="f"></span>
+    <span></span><span></span><span class="w"></span><span class="w"></span><span></span>
+    <span class="f"></span><span></span><span class="f"></span><span></span><span class="f"></span>
   </div>
   <div class="kicker">Part 3 · RAG &amp; Context 检索与上下文</div>
   <h1>3.4 When RAG Is the Wrong Answer
     <span class="zh">长上下文与 RAG 的边界</span>
   </h1>
+  <div class="meta">
+    <span>难度 <b>★★☆</b></span>
+    <span>阅读 <b>~14 min</b></span>
+    <span>面试出现频率 <b>高</b></span>
+    <span>前置 <b>1.1 / 3.1</b></span>
+  </div>
 </header>
 
+<!-- ================= 核心概念 ================= -->
 <section id="concept">
-  <div class="sec-tag"><span class="cell" style="background:var(--free)"></span><span class="lab">Draft 待撰写</span></div>
-  <p>本章尚未撰写。返回<a href="../index.html">全书目录</a>。</p>
+  <div class="sec-tag"><span class="cell"></span><span class="lab">Core Concept 核心概念</span></div>
+  <h2>「窗口够大了，还要 RAG 吗」是个假问题</h2>
+
+  <p>每次上下文窗口扩容，都会有人宣布 RAG 已死。这个论断把两件不同的事混为一谈了：<b>窗口大小是一个能力上限，RAG 是一种知识组织架构</b>。前者变大并不会让后者失去意义，就像硬盘变大不会让数据库失去意义。</p>
+
+  <p>但反过来说，「凡是外部知识都上 RAG」同样是错的，而且这个方向的错误在实践中更常见——团队为一个只有 20 篇文档的场景搭了完整的向量检索流水线，引入了切分、embedding、索引更新、召回调优五个新的故障点，只为了解决一个「把 20 篇文档拼进 prompt」就能解决的问题。</p>
+
+  <p>所以正确的问题不是「谁取代谁」，而是：<b>对这一块具体的知识，把它放进上下文和放进索引，各自的成本与风险是什么？</b></p>
+
+  <h3>先说长上下文的真实代价</h3>
+  <p>「塞进去就行」隐含了三个常被忽略的代价：</p>
+
+  <p><b>① 成本随长度超线性增长。</b><a href="1-1-tokenization.html">1.1</a> 讲过，prefill 阶段的 attention 计算量约为 O(n²)，KV cache 显存为 O(n)。把 100K token 全塞进去，每次调用都要为这 100K 付费和付延迟——而其中真正相关的可能只有 2K。RAG 只送相关的部分，成本可以差出一到两个数量级。</p>
+
+  <p><b>② 长上下文里的信息定位能力会衰减。</b>这是下面案例的主题，也是最容易被低估的一条：<b>内容在上下文里，不等于模型能用上它</b>。</p>
+
+  <p><b>③ 知识库通常远大于任何窗口。</b>企业文档动辄几十万页，且每天都在增加。窗口再大也装不下，且这个差距不会缩小——文档增长的速度通常快于窗口增长的速度。</p>
+
+  <h3>再说 RAG 的真实代价</h3>
+  <p><b>① 它引入了一整条新的故障链。</b><a href="3-1-why-rag.html">3.1</a> 列过：入库 → 切分 → 向量化 → 召回 → 排序 → 生成，六个环节各自会独立出错，且需要各自的监控与调优。</p>
+
+  <p><b>② 它会丢失全局视野。</b>这是 RAG 的结构性弱点：它按相似度取回<b>局部片段</b>。凡是需要「通读全文才能回答」的问题——「这份合同里有几处互相矛盾的条款」「这份报告整体的论证逻辑是什么」——检索天然无能为力，因为答案不在任何单个片段里，而在片段之间的关系里。</p>
+
+  <p><b>③ 冷启动成本高。</b>要跑通并调好一条 RAG 流水线，通常是数周的工作。而把文档拼进 prompt 是一个下午的事。</p>
+
+  <figure>
+    <svg viewBox="0 0 760 320" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="知识规模与查询类型决定的方案选择矩阵">
+      <text x="20" y="24" class="lbl">选择由两个维度决定：知识总量、查询是局部还是全局</text>
+
+      <line x1="90" y1="60" x2="90" y2="280" stroke="var(--line)" stroke-width="2"/>
+      <line x1="90" y1="280" x2="720" y2="280" stroke="var(--line)" stroke-width="2"/>
+      <text x="400" y="306" text-anchor="middle" class="sub">知识总量 →</text>
+      <text x="30" y="170" class="sub">查询</text>
+      <text x="30" y="188" class="sub">类型</text>
+
+      <!-- quadrants -->
+      <rect x="100" y="70" width="290" height="98" rx="6" fill="var(--alloc-soft)" stroke="var(--alloc)"/>
+      <text x="118" y="94" class="lbl">全局理解 · 知识量小</text>
+      <text x="118" y="118" class="mn">→ 直接塞上下文</text>
+      <text x="118" y="138" class="sub">合同一致性审查、单篇长文摘要、</text>
+      <text x="118" y="156" class="sub">代码库单文件重构</text>
+
+      <rect x="400" y="70" width="320" height="98" rx="6" fill="var(--waste-soft)" stroke="var(--waste)"/>
+      <text x="418" y="94" class="lbl">全局理解 · 知识量大</text>
+      <text x="418" y="118" class="mn">→ 最难的一类：分层摘要 / 预处理</text>
+      <text x="418" y="138" class="sub">先离线生成结构化摘要与索引，</text>
+      <text x="418" y="156" class="sub">再对摘要做检索或全量推理</text>
+
+      <rect x="100" y="180" width="290" height="90" rx="6" fill="var(--alloc-soft)" stroke="var(--alloc)"/>
+      <text x="118" y="204" class="lbl">局部事实 · 知识量小</text>
+      <text x="118" y="228" class="mn">→ 塞上下文即可，别上 RAG</text>
+      <text x="118" y="248" class="sub">几十篇 FAQ、单份产品手册</text>
+      <text x="118" y="264" class="sub">（配合 prompt caching 成本很低）</text>
+
+      <rect x="400" y="180" width="320" height="90" rx="6" fill="var(--alloc)"/>
+      <text x="418" y="204" class="lbl" fill="var(--on-fill)">局部事实 · 知识量大</text>
+      <text x="418" y="228" class="onfill">→ RAG 的主场</text>
+      <text x="418" y="248" class="onfill">企业知识库问答、客服、文档检索</text>
+      <text x="418" y="264" class="onfill">（需权限过滤与溯源时更是唯一选择）</text>
+    </svg>
+    <figcaption><b>图 1 · 四象限选择框架。</b>只有右下角是 RAG 的主场。左侧两格用 RAG 属于过度设计；右上角是最困难的一类，两种方案单用都不行——通常需要离线预处理把「全局问题」转化成「对摘要的局部问题」。</figcaption>
+  </figure>
+
+  <h3>还有第三个选项，别忘了它</h3>
+  <p>讨论「RAG 还是长上下文」时，经常漏掉一个更重要的问题：<b>这块知识是不是根本不该以文本形式提供？</b></p>
+
+  <p>如果知识是<b>结构化且实时</b>的（库存、订单状态、账户余额、今天的排班），正确答案既不是 RAG 也不是长上下文，而是<b>工具调用</b>（<a href="4-1-tool-use.html">4.1</a>）。把数据库里的数据同步到向量索引，等于给自己造了一份必然过期的副本，还牺牲了精确查询能力。</p>
+
+  <p>如果需要改变的是模型的<b>行为</b>而非它掌握的<b>事实</b>——输出风格、领域推理方式、特定格式——那三个选项都不对，应该看 <a href="5-1-finetune-decision.html">5.1</a> 的升级路径。</p>
+</section>
+
+<!-- ================= 案例 ================= -->
+<section id="case">
+  <div class="sec-tag"><span class="cell" style="background:var(--waste)"></span><span class="lab">Case Study 真实案例</span></div>
+  <h2>Lost in the Middle：塞进去 ≠ 用得上</h2>
+
+  <div class="case">
+    <div class="case-head"><span class="cell"></span>Lost in the Middle: How Language Models Use Long Contexts (TACL 2024)</div>
+    <div class="case-body">
+      <p>Liu 等人设计了一个干净的实验：在多文档问答与键值检索任务中，<b>把包含正确答案的那份材料放到上下文的不同位置</b>，其余材料保持不变，然后观察准确率如何变化。这个设计的巧妙之处在于——<b>信息始终都在上下文里，唯一变化的只有位置。</b></p>
+      <div class="stats">
+        <div class="stat"><div class="n">U 形曲线</div><div class="l">性能随相关信息位置变化的形状</div></div>
+        <div class="stat"><div class="n good">开头 / 结尾</div><div class="l">相关信息位于此处时性能最高</div></div>
+        <div class="stat"><div class="n bad">中间</div><div class="l">性能显著下降</div></div>
+        <div class="stat"><div class="n bad">长上下文模型同样如此</div><div class="l">专门为长上下文设计的模型也未能幸免</div></div>
+      </div>
+      <p>论文的结论是：<b>当前的语言模型并不能稳健地利用长输入上下文中的信息</b>。</p>
+      <p><b>三个直接的工程含义</b>：</p>
+      <p><b>① 「上下文窗口 128K」是容量指标，不是能力承诺。</b>能装下和能用好是两件事。任何基于「反正窗口够大」的架构决策，都需要在自己的任务上验证有效利用率。</p>
+      <p><b>② 排序在 RAG 里比你以为的更重要。</b>既然位置影响利用率，那么 rerank（<a href="3-3-hybrid-search-rerank.html">3.3</a>）的价值就不只是「让好的排前面以免被截断」，还包括<b>让最相关的材料落在模型最容易利用的位置</b>。一个实用技巧是把最相关的片段放在上下文的<b>开头或结尾</b>，而不是按相关性顺序一路排下去。</p>
+      <p><b>③ 少即是多。</b>召回 20 个片段不一定比召回 5 个好——多出来的 15 个不仅增加成本，还会把关键信息挤到中间位置去。这与直觉相反，也是许多 RAG 系统「召回数量调大后效果反而变差」的原因。</p>
+      <p><b>需要注意的边界</b>：这项研究测的是特定模型与特定任务，具体模型的表现会随架构与训练方式演进而变化。<b>可迁移的不是「中间一定差」这个结论，而是「必须实测有效利用率，不能假设窗口内均匀可用」这个方法。</b>做法很简单：把已知答案的材料放在不同位置各测一轮，看准确率是否稳定。</p>
+      <div class="src">来源：Liu, Lin, Hewitt, Paranjape, Bevilacqua, Petroni, Liang, "Lost in the Middle: How Language Models Use Long Contexts", TACL Vol. 12 (2024) (arXiv:2307.03172). 结论引自论文摘要。</div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 工具层 ================= -->
+<section id="tools">
+  <div class="sec-tag"><span class="cell" style="background:var(--free)"></span><span class="lab">Tooling Sidebar 工具层</span></div>
+  <div class="toolbox">
+    <div class="toolbox-head">
+      <span class="t">两条路线的成本现状（会过期，正文不依赖本区块）</span>
+      <span class="date">截至 2026-08</span>
+    </div>
+    <div class="toolbox-body">
+      <p><b>长上下文的成本已被 prompt caching 大幅改变</b>：若同一份长文档会被反复提问（如「上传一份合同后连续追问十个问题」），开启缓存后除首次外的调用只需为增量部分付费（<a href="2-2-prompt-caching.html">2.2</a>）。<b>这类「一份文档、多轮追问」的场景，长上下文的经济性往往优于 RAG</b>——而这一点在缓存普及前是不成立的，是近年少数真正改变了架构选择的变化。</p>
+      <p><b>反过来，「一次性提问一份新文档」的场景</b>缓存帮不上忙（写入了也没人复用），长上下文的成本劣势依然明显。</p>
+      <p><b>长上下文评测</b>：不要只看厂商标称的窗口大小。可参考公开的长上下文评测（如 RULER、HELMET 等工作），它们衡量的是<b>有效利用长度</b>而非标称长度，两者常有明显差距。更可靠的做法仍是在自己的任务上做位置敏感性测试。</p>
+      <p><b>混合形态越来越常见</b>：先用检索粗筛到几万 token，再让长上下文模型在其中做全局推理——这个组合避免了纯 RAG 的碎片化，也避免了纯长上下文的成本爆炸，是当前工程上较优的默认形态。</p>
+    </div>
+  </div>
+</section>
+
+<!-- ================= Quiz ================= -->
+<section id="quiz">
+  <div class="sec-tag"><span class="cell"></span><span class="lab">Quiz 自测</span></div>
+  <h2>章末自测</h2>
+  <div class="quiz">
+
+    <details>
+      <summary><span class="qtype">场景判断</span>三个需求各选一条路（RAG / 长上下文 / fine-tune）：A. 让模型掌握公司最新的退款政策；B. 让模型稳定输出符合特定 schema 的 JSON；C. 让模型用本行业资深专家的方式做推理和措辞。</summary>
+      <div class="answer">
+        <p><b>A 退款政策 → RAG。</b>理由不是「知识多」，而是三个硬性属性：<b>会变</b>（政策更新频繁，微调跟不上）、<b>需溯源</b>（客服场景必须能给出制度原文）、<b>可能需要权限区分</b>（不同渠道政策不同）。这三条任何一条成立，都指向检索。<br><span class="mn">补充：若政策只有寥寥几条且很少变，直接写进 system prompt 比 RAG 更简单可靠——别忘了这个更便宜的选项。</span></p>
+        <p><b>B 稳定 JSON → 都不是，用 constrained decoding（约束解码）。</b>这是本题的关键陷阱。格式遵循是一个<b>可以在解码层强制保证</b>的问题：通过语法/schema 约束采样空间，让模型在结构上不可能输出非法 JSON。用微调去「教」格式，既费钱又只能提高概率而无法保证；用 RAG 更是完全不相干——格式不是知识。<br><span class="mn">工程上：先用约束解码保证结构合法，再用 schema 校验兜底，最后才考虑用少量样本微调来改善字段内容的质量。</span></p>
+        <p><b>C 专家推理风格 → fine-tune。</b>这是微调真正的适用场景：要改变的是<b>行为方式</b>（怎么组织论证、用什么措辞、关注哪些要点），而不是<b>掌握哪些事实</b>。这类隐性风格无法通过 prompt 完整描述，也无法从检索到的文档中现学。<br><span class="mn">但仍应遵循 <a href="5-1-finetune-decision.html">5.1</a> 的升级路径：先试 few-shot，如果几个精选示例就能带出风格，就不必微调。</span></p>
+        <p><b>这道题的通用判断法</b>：先问<b>「要改的是事实还是行为？」</b>——事实走 RAG 或工具调用，行为走 prompt / few-shot / 微调。再问<b>「有没有更底层的确定性手段？」</b>——格式这类问题，解码层的约束永远优于概率层的训练。</p>
+      </div>
+    </details>
+
+    <details>
+      <summary><span class="qtype">估算题</span>法律团队要审查一份 8 万 token 的合同，会围绕它连续提问约 30 个问题。用 RAG 还是全文塞进上下文？</summary>
+      <div class="answer">
+        <p><b>先判断查询类型</b>：合同审查中大量问题是<b>全局性</b>的——「有没有互相矛盾的条款」「责任分配是否对等」「与我方标准模板有哪些偏离」。这类问题的答案不在任何单个片段里，<b>RAG 在结构上就无法回答</b>。这一条基本已经定了方向。</p>
+        <p><b>再算成本</b>：8 万 token 全文，30 轮提问。<br>• <b>无缓存</b>：30 × 80,000 = 240 万输入 token，成本高且每轮 TTFT 都很长。<br>• <b>有 prompt caching</b>：合同全文作为稳定前缀只需首次完整付费，后续 29 轮命中缓存，按 1/10 折扣估算 ≈ 80,000 × (1 + 29 × 0.1) ≈ <b>31 万 token 当量</b>，成本降到约 1/8，TTFT 也大幅改善。<br>• <b>RAG</b>：每轮送 3K，30 轮 = 9 万 token，绝对值最低——<b>但它答不对全局性问题</b>。</p>
+        <p><b>结论：长上下文 + prompt caching。</b>这正是「一份文档、多轮追问」的典型形态，缓存把长上下文的成本劣势基本抹平，而 RAG 的质量劣势无法弥补。</p>
+        <p><b>注意前提</b>：需确认缓存 TTL 覆盖用户的提问节奏（若用户思考几十分钟才问下一个问题，缓存可能已过期），以及模型对 8 万 token 的<b>有效利用率</b>——建议先做一次位置敏感性测试。</p>
+      </div>
+    </details>
+
+    <details>
+      <summary><span class="qtype">面试题改编</span>「上下文窗口迟早会到千万级，RAG 是不是过渡技术？」</summary>
+      <div class="answer">
+        <p>需要区分三个不同的论断，因为它们的答案不同：</p>
+        <p><b>① 「窗口变大会减少 RAG 的使用场景」——对。</b>中小规模知识库（几十万 token 以内）确实正在从 RAG 迁回直接塞上下文，prompt caching 加速了这个趋势。这是真实发生的变化。</p>
+        <p><b>② 「窗口变大会让 RAG 消失」——不对</b>，有四个理由与窗口大小无关：<b>成本</b>——为 1000 万 token 付费去回答一个问题，经济上不成立，稀疏访问必然需要索引；<b>权限</b>——不同用户可见范围不同，必须在检索层过滤，无法靠一个共享上下文实现；<b>溯源</b>——需要指明答案出自哪份文档哪一段；<b>实时性</b>——数据每秒在变，总不能每次重塞全量。</p>
+        <p><b>③ 「RAG 的形态会变」——这才是最可能的答案。</b>它正在从「切碎 + 向量召回」演化为「更粗的粒度 + 更强的筛选 + 交给长上下文做全局推理」。检索的角色从「找到那句话」变成「圈定相关范围」。<b>检索作为一个架构层不会消失，但它的实现会持续变化。</b></p>
+        <p><b>加分</b>：指出「塞进去 ≠ 用得上」——Lost in the Middle 一类研究表明长上下文中的信息利用率并不均匀，所以窗口增大带来的收益<b>不是线性的</b>，这本身就限制了「全塞进去」路线的上限。</p>
+      </div>
+    </details>
+
+  </div>
 </section>
 
 <nav class="next">
-  <a href="3-3-hybrid-search-rerank.html">← 3.3 稠密检索的盲区与两阶段检索</a>
-  <a href="3-5-rag-eval.html">3.5 检索指标与生成指标分离评估 →</a>
+  <a href="3-3-hybrid-search-rerank.html">← 3.3 Embedding、Hybrid Search 与 Rerank</a>
+  <a href="3-5-rag-eval.html">3.5 RAG 评估 →</a>
 </nav>
 
 </div>
