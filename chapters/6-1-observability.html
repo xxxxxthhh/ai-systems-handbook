@@ -3,7 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>6.1 LLM 应用的可观测性 · AI 系统工程手册</title>
+<title>6.1 可观测性 · AI 系统工程手册</title>
+<meta name="description" content="LLM 应用的 tracing、成本与质量监控指标设计。">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Noto+Sans+SC:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -20,23 +21,185 @@
 
 <header class="ch">
   <div class="blockrow" aria-hidden="true">
-    <span></span><span></span><span class="f"></span><span class="f"></span><span class="f"></span>
-    <span class="f"></span><span class="f"></span><span class="f"></span><span class="f"></span><span class="f"></span>
+    <span></span><span></span><span></span><span class="w"></span><span></span>
+    <span></span><span class="f"></span><span></span><span class="f"></span><span class="f"></span>
   </div>
   <div class="kicker">Part 6 · Production 生产化</div>
   <h1>6.1 Observability
-    <span class="zh">LLM 应用的可观测性</span>
+    <span class="zh">可观测性：200 OK 不代表答对了</span>
   </h1>
+  <div class="meta">
+    <span>难度 <b>★★☆</b></span>
+    <span>阅读 <b>~13 min</b></span>
+    <span>面试出现频率 <b>中</b></span>
+    <span>前置 <b>2.1 延迟指标</b></span>
+  </div>
 </header>
 
+<!-- ================= 核心概念 ================= -->
 <section id="concept">
-  <div class="sec-tag"><span class="cell" style="background:var(--free)"></span><span class="lab">Draft 待撰写</span></div>
-  <p>本章尚未撰写。返回<a href="../index.html">全书目录</a>。</p>
+  <div class="sec-tag"><span class="cell"></span><span class="lab">Core Concept 核心概念</span></div>
+  <h2>传统监控在这里有一个致命盲区</h2>
+
+  <p>传统服务的健康度可以用几个指标概括：错误率、延迟、饱和度。它们之所以有效，是因为<b>「服务坏了」通常会以异常的形式表现出来</b>——抛异常、返回 5xx、超时。</p>
+
+  <p>LLM 应用打破了这个前提。它最严重的故障形态是：<b>HTTP 200、延迟正常、无任何异常日志，但答案是错的。</b>模型不会因为不知道答案就报错，它会自信地编一个（<a href="3-1-why-rag.html">3.1</a>）。你的全部传统监控面板都是绿的，用户却在流失。</p>
+
+  <div class="callout">
+    <p><b>由此得出 LLM 可观测性的第一原则：质量必须被单独观测，它不会自己冒泡。</b>如果你的监控体系里没有一个指标在回答「答得对不对」，那么你观测的只是「系统有没有在运行」，而不是「系统有没有在工作」。</p>
+  </div>
+
+  <h3>三层指标，缺一不可</h3>
+
+  <div class="tbl-scroll">
+  <table>
+    <thead><tr><th>层次</th><th>指标</th><th>特点</th></tr></thead>
+    <tbody>
+      <tr><td><b>① 系统层</b></td><td>TTFT / TPOT 分位数、错误率、限流命中率、<b>缓存命中率</b>（<a href="2-2-prompt-caching.html">2.2</a>）</td><td>可直接测量，与传统监控同构，但要<b>按输入长度分桶</b></td></tr>
+      <tr><td><b>② 成本层</b></td><td>每请求 token 数、单位成本、<b>按功能/租户/模型分摊</b></td><td>LLM 应用独有的一等公民指标——<b>成本可以在一夜之间涨十倍而不触发任何告警</b></td></tr>
+      <tr><td><b>③ 质量层</b></td><td>代理信号 + 抽样评估（见下）</td><td>无法直接测量，只能间接推断，是本章的重点</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <p><b>成本为什么要单独成层？</b>因为在传统服务里，成本与流量基本是线性关系，监控流量就够了。而 LLM 应用的成本可以<b>在流量不变的情况下暴涨</b>——某次 prompt 改动让缓存命中率归零、某个 agent 陷入循环多跑了 20 轮、检索召回数从 3 调到 20、用户开始上传超长文档。这些都不是「故障」，传统监控不会报警，<b>但它们能让账单翻几倍</b>。</p>
+
+  <h3>质量层：用代理信号，而不是等用户投诉</h3>
+  <p>质量无法直接测量，但可以用<b>用户行为</b>间接推断。这些信号的好处是零标注成本、实时、覆盖全量流量：</p>
+
+  <p><b>强信号</b>（几乎确定出了问题）：用户<b>重新生成</b>、<b>点踩</b>、<b>转人工</b>、<b>把同一个问题换个说法再问一遍</b>。最后这个尤其有价值——它是「答案没用」的最诚实表达，而且用户不需要做任何额外动作。</p>
+
+  <p><b>弱信号</b>（需要结合上下文判断）：会话中途放弃、响应后无任何后续动作、复制了答案但很快又提问。</p>
+
+  <p><b>结构性信号</b>（可程序化判定，最可靠）：输出<b>JSON 解析失败率</b>、<b>schema 校验失败率</b>、<b>工具调用失败率</b>、RAG 场景下的<b>「资料中未提及」拒答率</b>、<b>引用缺失率</b>。这类信号不依赖用户行为，可以直接接进告警。</p>
+
+  <h3>Tracing：一次请求横跨十几个环节</h3>
+  <p>一次用户请求在 LLM 应用里可能展开成：检索 → 重排 → 第一次模型调用 → 工具调用 → 第二次模型调用 → 输出校验。任何一环都可能是延迟或成本的元凶，<b>而聚合指标看不见它们</b>。</p>
+
+  <figure>
+    <svg viewBox="0 0 760 260" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="一次 LLM 请求的 trace 结构与每个 span 需记录的字段">
+      <text x="20" y="24" class="lbl">一次请求的 trace：每个 span 都要带 token 数与成本</text>
+
+      <rect x="20" y="40" width="700" height="26" rx="4" fill="var(--head-bg)"/>
+      <text x="34" y="58" class="onfill">请求 trace　总耗时 3.2s　总成本 X　总 token 8,400</text>
+
+      <rect x="40" y="76" width="120" height="26" rx="4" fill="var(--free)"/>
+      <text x="52" y="94" class="mn">检索 180ms</text>
+      <text x="170" y="94" class="sub">召回 20 条 · 命中缓存否</text>
+
+      <rect x="40" y="110" width="90" height="26" rx="4" fill="var(--free)"/>
+      <text x="52" y="128" class="mn">重排 240ms</text>
+      <text x="170" y="128" class="sub">20 → 5 条</text>
+
+      <rect x="40" y="144" width="330" height="26" rx="4" fill="var(--alloc)"/>
+      <text x="52" y="162" class="onfill">LLM 调用 #1　1.4s　in 6,200 / out 180</text>
+      <text x="382" y="162" class="sub">缓存命中 5,800 · 模型版本</text>
+
+      <rect x="40" y="178" width="130" height="26" rx="4" fill="var(--waste)"/>
+      <text x="52" y="196" class="onfill">工具调用 520ms</text>
+      <text x="182" y="196" class="sub">名称 · 参数 · 成功与否</text>
+
+      <rect x="40" y="212" width="260" height="26" rx="4" fill="var(--alloc)"/>
+      <text x="52" y="230" class="onfill">LLM 调用 #2　860ms　in 1,900 / out 120</text>
+      <text x="312" y="230" class="sub">这一层看不到，就无法归因</text>
+    </svg>
+    <figcaption><b>图 1 · trace 结构。</b>每个 span 至少记录：<b>耗时、输入/输出 token 数、缓存命中 token 数、模型版本、成本</b>。有了这些，「为什么这个请求花了 3 秒」和「为什么这个月账单涨了」才有答案；没有这些，你只能猜。</figcaption>
+  </figure>
+
+  <p><b>三个务必记录、却最常被遗漏的字段</b>：<b>① 模型版本</b>——供应商静默更新模型时，这是你唯一能对齐时间线的依据（<a href="6-5-degradation-fallback.html">6.5</a>）；<b>② 缓存命中的 token 数</b>——没有它就算不出真实成本，也发现不了缓存失效；<b>③ prompt 模板版本</b>——把 prompt 当作有版本的资产，质量波动才能与改动对齐。</p>
+
+  <div class="callout">
+    <p><b>关于记录 prompt 与响应原文</b>：它对排查极其有价值，但也带来隐私与存储成本问题。务实做法是——<b>脱敏后按比例采样存全量原文，失败案例存 100%</b>，并设定明确的保留期限。<b>不要因为「有隐私顾虑」就什么都不存</b>，那会让整个系统变成黑盒；正确的做法是设计好脱敏与保留策略。</p>
+  </div>
+</section>
+
+<!-- ================= 案例 ================= -->
+<section id="case">
+  <div class="sec-tag"><span class="cell" style="background:var(--waste)"></span><span class="lab">Case Study 案例</span></div>
+  <h2>月底才发现的成本暴涨（匿名化）</h2>
+
+  <div class="case">
+    <div class="case-head"><span class="cell"></span>一次 prompt 改动，把账单推高了数倍</div>
+    <div class="case-body">
+      <p><b>背景</b>：一个文档问答产品，稳定运行数月，成本曲线平滑可预测。团队有完整的传统监控——延迟、错误率、QPS 全部正常。</p>
+      <p><b>事件</b>：某次迭代中，有人在 system prompt 的开头加了一行<b>当前日期</b>，用于让模型正确处理「最近」「今年」这类相对时间表述。功能测试全部通过，效果确实改善了，顺利上线。</p>
+      <p><b>后果</b>：这一行改动让 prompt 前缀<b>每天变化一次</b>——更准确地说，让<b>此前稳定的前缀不再稳定</b>。prompt caching 的命中率从很高直接归零（<a href="2-2-prompt-caching.html">2.2</a>：匹配是从第 0 个 token 开始的精确前缀匹配）。每次调用都要为完整的 system prompt 全额付费。</p>
+      <div class="stats">
+        <div class="stat"><div class="n bad">0%</div><div class="l">缓存命中率（改动前接近满命中）</div></div>
+        <div class="stat"><div class="n">正常</div><div class="l">延迟、错误率、QPS —— 全部指标健康</div></div>
+        <div class="stat"><div class="n bad">3 周</div><div class="l">从上线到发现的时间（靠月度账单）</div></div>
+      </div>
+      <p><b>为什么这么久才发现</b>：因为<b>没有任何一个指标在观测它</b>。功能是对的、延迟略有上升但在正常波动范围内、错误率为零。唯一的信号是账单，而账单是月度的。<b>这是一次典型的「监控盲区」事故——不是监控失灵，是压根没有对应的监控项。</b></p>
+      <p><b>修复与预防</b>：<br><b>①</b> 把日期移到 prompt <b>末尾</b>（靠近用户提问），恢复前缀稳定性；<br><b>②</b> 把<b>缓存命中率</b>做成一等监控指标并设告警阈值；<br><b>③</b> 把<b>每请求平均成本</b>做成日级监控，环比波动超阈值即告警——<b>不要等月度账单</b>；<br><b>④</b> 在发布检查清单里加一条：<b>「本次改动是否触及 prompt 的前缀部分？」</b></p>
+      <p><b>可迁移的教训</b>：<b>LLM 应用有一类故障，其唯一症状是成本</b>——功能正常、性能正常、用户无感。传统监控体系里没有为它准备的位置，必须显式地把成本做成一等指标，且观测粒度要细到<b>「每请求成本」</b>而不只是「总成本」（后者会被流量波动掩盖）。</p>
+      <div class="src">说明：本案例为综合多个真实项目的<b>匿名化复盘</b>，不含任何可识别的公司、产品或个人信息。所述现象与修复为工程实践总结，非实验测量数据。</div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 工具层 ================= -->
+<section id="tools">
+  <div class="sec-tag"><span class="cell" style="background:var(--free)"></span><span class="lab">Tooling Sidebar 工具层</span></div>
+  <div class="toolbox">
+    <div class="toolbox-head">
+      <span class="t">可观测性工具（会过期，正文不依赖本区块）</span>
+      <span class="date">截至 2026-08</span>
+    </div>
+    <div class="toolbox-body">
+      <p><b>LLM 专用平台</b>：Langfuse（开源，可自托管）、LangSmith、Braintrust、Arize Phoenix、Helicone 等，提供 trace 记录、成本核算、数据集与评估编排。<b>核心价值是省掉自建 trace 存储与 UI</b>，而不是它们的评估功能——评估仍然需要你自己定义指标。</p>
+      <p><b>OpenTelemetry</b>：如果已有成熟的可观测性栈，用 OTel 的语义约定把 LLM 调用作为 span 接进现有系统，往往比引入一套独立平台更合适——<b>LLM 调用只是你系统里的一环，把它割裂成单独的监控孤岛会让端到端排查更难</b>。</p>
+      <p><b>成本归因</b>：多数商业 API 支持在请求中带自定义标签/元数据，用于按功能、租户、环境分摊成本。<b>从第一天就打上标签</b>——事后想按业务线拆分成本，如果没打标签就只能重放日志。</p>
+      <p><b>告警设计要点</b>：LLM 应用的指标噪声较大，固定阈值容易误报。<b>优先用环比/同比变化率告警</b>（如「每请求平均 token 数较过去 7 日基线上涨超过 30%」），而不是绝对值阈值。另外<b>缓存命中率骤降</b>是一个高价值的单点告警，它能覆盖本章案例那一整类问题。</p>
+    </div>
+  </div>
+</section>
+
+<!-- ================= Quiz ================= -->
+<section id="quiz">
+  <div class="sec-tag"><span class="cell"></span><span class="lab">Quiz 自测</span></div>
+  <h2>章末自测</h2>
+  <div class="quiz">
+
+    <details>
+      <summary><span class="qtype">概念题</span>为什么传统的「错误率 + 延迟 + 饱和度」监控体系，用在 LLM 应用上会留下致命盲区？</summary>
+      <div class="answer">
+        <p><b>因为这套体系的前提是「故障会以异常的形式表现出来」，而 LLM 最严重的故障恰恰不会。</b></p>
+        <p>模型给出一个完全错误的答案时：HTTP 状态码是 200、延迟正常、无异常日志、无堆栈。<b>从系统视角看，这次请求是完美成功的。</b>模型不会因为不知道而报错——它被训练来产出最合理的下一个 token，而不是判断自己知不知道（<a href="3-1-why-rag.html">3.1</a>）。</p>
+        <p><b>还有第二个盲区：成本。</b>传统服务的成本与流量基本线性相关，监控流量即可。而 LLM 应用的成本可以在<b>流量完全不变</b>的情况下暴涨——缓存失效、agent 多循环了几轮、召回数调大、用户开始传长文档。这些都不是故障，却能让账单翻几倍。</p>
+        <p><b>因此必须补两层</b>：<b>质量层</b>（用户重试/点踩/转人工等代理信号 + 结构性信号如 JSON 解析失败率 + 抽样评估）和<b>成本层</b>（每请求成本、缓存命中率、按功能分摊）。<b>缺了这两层，绿色的监控面板只能说明「服务在运行」，不能说明「服务在工作」。</b></p>
+      </div>
+    </details>
+
+    <details>
+      <summary><span class="qtype">场景判断</span>用户投诉「最近回答质量下降了」，但所有监控指标正常。你按什么顺序排查？</summary>
+      <div class="answer">
+        <p><b>第一步：先确认这是不是真的（并划定范围）。</b>看代理信号的时间序列——重新生成率、点踩率、转人工率、同问题重问率。<b>如果这些信号确实在某个时间点上升，就锁定了变更窗口</b>；如果完全没有变化，可能是个别用户的主观感受或某个细分场景的问题，需要先定位人群。</p>
+        <p><b>第二步：对齐变更时间线。</b>把信号上升的时间点与三类变更对齐——<b>①</b> 你自己的发布（prompt 模板版本、检索参数、模型配置）；<b>②</b> <b>供应商的模型版本变更</b>（这就是为什么 trace 必须记录模型版本——静默更新是真实存在的，见 <a href="6-5-degradation-fallback.html">6.5</a>）；<b>③</b> 数据侧变更（知识库更新、索引重建）。</p>
+        <p><b>第三步：分桶定位。</b>按查询类型、用户群、输入长度、检索命中情况分桶看指标。<b>整体指标会把某一类的崩塌平均掉</b>——常见情形是「某一类查询彻底坏了，但它只占 5% 流量」。</p>
+        <p><b>第四步：拿失败案例看原文。</b>调出具体 trace，看召回的材料、完整 prompt、模型输出。<b>这一步永远不能跳过</b>——它能一眼区分是检索问题、prompt 问题还是模型问题（<a href="3-5-rag-eval.html">3.5</a> 的归因矩阵）。</p>
+        <p><b>第五步：在 golden set 上复现。</b>用固定评估集跑当前版本与上一版本对比，把主观的「感觉变差了」变成可量化的结论（<a href="6-4-eval-pipeline.html">6.4</a>）。</p>
+        <p><b>如果排查完发现什么都没变</b>——那么最可能的解释是<b>用户的使用方式变了</b>（新场景、新人群、新的提问方式），系统本身没退化，只是遇到了它没被设计来处理的输入。这同样是有价值的发现。</p>
+      </div>
+    </details>
+
+    <details>
+      <summary><span class="qtype">架构评审</span>某团队的 LLM 监控方案：记录每次请求的耗时与是否报错，每月对账单做一次复盘。指出问题并给出最小可行的改进。</summary>
+      <div class="answer">
+        <p><b>问题一：完全没有质量观测。</b>这是最致命的缺陷——答错不报错，当前方案对最主要的故障形态完全失明。<b>最小改进</b>：先接三个几乎零成本的结构性信号——<b>JSON/schema 校验失败率、工具调用失败率、拒答率</b>，它们可程序化判定、可直接告警。再接用户侧的重新生成率与点踩率。</p>
+        <p><b>问题二：成本观测的粒度和频率都不对。</b>月度对账单意味着一次成本事故最多可能持续一个月才被发现；而「总成本」会被流量波动掩盖。<b>最小改进</b>：做<b>日级</b>的<b>每请求平均 token 数与平均成本</b>监控，按环比变化率告警。再加一个<b>缓存命中率</b>指标——它单独就能覆盖一大类成本事故。</p>
+        <p><b>问题三：只有请求级耗时，没有 trace。</b>知道「这个请求花了 3 秒」但不知道时间花在检索、重排还是哪次模型调用上，无法归因。<b>最小改进</b>：给每个环节加 span，至少记录耗时、输入/输出 token、模型版本。</p>
+        <p><b>问题四：没有记录版本信息。</b>模型版本、prompt 模板版本、检索配置版本——缺了它们，质量波动无法与任何变更对齐，排查只能靠回忆。<b>这一项改动成本极低但价值极高。</b></p>
+        <p><b>问题五：没有保留失败案例的原文。</b>排查时无法复现。<b>最小改进</b>：脱敏后对失败案例存 100% 原文，成功案例按比例采样，设定保留期限。</p>
+        <p><b>按投入产出排序，如果只能做三件事</b>：① 结构性质量信号 + 告警；② 日级每请求成本 + 缓存命中率；③ trace 中记录模型版本与 prompt 版本。这三件加起来大约几天工作量，却能覆盖绝大多数生产事故的发现与归因需求。</p>
+      </div>
+    </details>
+
+  </div>
 </section>
 
 <nav class="next">
-  <a href="5-4-alignment-and-validation.html">← 5.4 偏好对齐与效果验证</a>
-  <a href="6-2-prompt-injection.html">6.2 注入攻击与工程化缓解 →</a>
+  <a href="5-4-alignment-and-validation.html">← 5.4 偏好对齐与验证</a>
+  <a href="6-2-prompt-injection.html">6.2 Prompt Injection 与安全 →</a>
 </nav>
 
 </div>

@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>6.3 幻觉的工程化缓解 · AI 系统工程手册</title>
+<meta name="description" content="引用约束、置信度信号与拒答设计。">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Noto+Sans+SC:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -20,23 +21,178 @@
 
 <header class="ch">
   <div class="blockrow" aria-hidden="true">
-    <span></span><span></span><span class="f"></span><span class="f"></span><span class="f"></span>
-    <span class="f"></span><span class="f"></span><span class="f"></span><span class="f"></span><span class="f"></span>
+    <span></span><span></span><span class="w"></span><span></span><span></span>
+    <span class="w"></span><span></span><span></span><span class="f"></span><span class="f"></span>
   </div>
   <div class="kicker">Part 6 · Production 生产化</div>
   <h1>6.3 Mitigating Hallucination
-    <span class="zh">幻觉的工程化缓解</span>
+    <span class="zh">引用约束、置信度信号与拒答设计</span>
   </h1>
+  <div class="meta">
+    <span>难度 <b>★★☆</b></span>
+    <span>阅读 <b>~13 min</b></span>
+    <span>面试出现频率 <b>中高</b></span>
+    <span>前置 <b>3.1 / 3.5</b></span>
+  </div>
 </header>
 
+<!-- ================= 核心概念 ================= -->
 <section id="concept">
-  <div class="sec-tag"><span class="cell" style="background:var(--free)"></span><span class="lab">Draft 待撰写</span></div>
-  <p>本章尚未撰写。返回<a href="../index.html">全书目录</a>。</p>
+  <div class="sec-tag"><span class="cell"></span><span class="lab">Core Concept 核心概念</span></div>
+  <h2>目标不是消灭幻觉，而是让它可检测、可控、可承担</h2>
+
+  <p><a href="3-1-why-rag.html">3.1</a> 解释过幻觉的成因：模型被训练来生成统计上最合理的续写，<b>它内部没有一个可靠的「我不知道」信号</b>。训练语料里几乎全是自信的陈述句，很少有人在写作时说「关于这个我不确定」。</p>
+
+  <p>所以「彻底消除幻觉」不是一个可交付的工程目标。可交付的目标有三个，且它们的优先级依次递减：</p>
+
+  <div class="formula"><b>①</b> 让答案<b>可核对</b>——有引用、有出处，用户和程序都能验证<br><b>②</b> 让模型在不确定时<b>说不知道</b>——拒答优于编造<br><b>③</b> 让错误<b>后果可承担</b>——高风险场景加人工复核与免责设计<br><br>注意三者都<b>不试图让模型更少犯错</b>，<br>而是改变「犯错之后会发生什么」。</div>
+
+  <h3>① 引用约束：把生成变成有据可查</h3>
+  <p>最有效的单一手段：<b>要求模型的每个事实性陈述都标注它来自哪一段材料</b>，并在输出后<b>程序化校验</b>这些引用是否真实存在、是否支持对应的论断。</p>
+
+  <p>它同时带来三重收益：<b>①</b> 引用要求本身会<b>抑制编造</b>——模型必须为每句话找到出处，找不到时更倾向于不说；<b>②</b> 引用让答案<b>可被用户核对</b>，把信任判断交还给人；<b>③</b> 引用让 groundedness 可以<b>自动评估</b>（<a href="3-5-rag-eval.html">3.5</a>）——这是可观测性的前提。</p>
+
+  <p><b>但要注意一个陷阱：模型会编造引用。</b>它可能标注一个不存在的段落编号，或引用了真实段落却说了段落里没有的内容。<b>因此引用必须被程序校验，而不是被信任</b>——校验引用编号是否在召回集合内是零成本的，校验引用内容是否支持论断则可以用小模型或规则做。</p>
+
+  <h3>② 拒答设计：两类错误的代价是不对称的</h3>
+  <p>这是本章最重要的判断，也是最容易被做反的地方。</p>
+
+  <figure>
+    <svg viewBox="0 0 760 280" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="拒答阈值在过度自信与过度保守之间的取舍">
+      <text x="20" y="24" class="lbl">拒答阈值：两端都是失败，但代价不对称</text>
+
+      <line x1="60" y1="150" x2="700" y2="150" stroke="var(--line)" stroke-width="3"/>
+      <text x="60" y="180" class="sub">阈值低（几乎不拒答）</text>
+      <text x="600" y="180" class="sub">阈值高（动辄拒答）</text>
+
+      <rect x="60" y="70" width="220" height="60" rx="6" fill="var(--waste)"/>
+      <text x="78" y="94" class="onfill">过度自信</text>
+      <text x="78" y="114" class="onfill">编造答案，用户被误导</text>
+
+      <rect x="480" y="70" width="220" height="60" rx="6" fill="var(--waste-soft)" stroke="var(--waste)"/>
+      <text x="498" y="94" class="lbl">过度保守</text>
+      <text x="498" y="114" class="mn">什么都说「不确定」，产品无用</text>
+
+      <rect x="300" y="70" width="160" height="60" rx="6" fill="var(--alloc)"/>
+      <text x="318" y="94" class="onfill">可用区间</text>
+      <text x="318" y="114" class="onfill">位置由业务风险决定</text>
+
+      <text x="60" y="222" class="sub">医疗 / 法律 / 金融：错误代价极高 → 阈值应偏右（宁可拒答）</text>
+      <text x="60" y="244" class="sub">创意写作 / 头脑风暴：错误代价低 → 阈值可偏左（宁可多说）</text>
+      <text x="60" y="266" class="sub">关键：这是一个<tspan font-weight="700">业务决策</tspan>，不是技术参数——必须由产品与业务方确定，而不是由工程师默认。</text>
+    </svg>
+    <figcaption><b>图 1 · 拒答阈值。</b>两端都是失败模式，但它们的<b>可见性</b>差异巨大：过度保守会立刻被用户抱怨、被产品经理发现；<b>过度自信则悄无声息</b>——用户拿到一个自信的错误答案，可能永远不会告诉你。<b>因此默认应当偏向保守一侧</b>，因为那一侧的错误至少会被看见。</figcaption>
+  </figure>
+
+  <p><b>让拒答真的能发生，需要三件事</b>：<b>①</b> 在 prompt 中<b>明确授权拒答</b>并给出具体表述（「若材料中未提及，回答『提供的资料中未包含相关信息』」）——不明确授权时，模型的默认倾向是尽力回答；<b>②</b> 提供<b>拒答的示例</b>（few-shot 里要有拒答的样本，否则模型认为拒答不是合法输出）；<b>③</b> <b>把拒答率做成监控指标</b>——它突然下降可能意味着模型开始编造，突然上升可能意味着检索坏了。</p>
+
+  <h3>③ 置信度信号：可用的与不可用的</h3>
+  <p><b>不要直接问模型「你有多确信」</b>——模型对自己置信度的自我报告并不可靠，且容易被表述方式影响。更可用的信号来自外部：</p>
+
+  <p><b>检索侧信号</b>（最实用）：召回结果的<b>最高相似度分数</b>、召回条数、rerank 分数。若最相关的材料相似度都很低，说明知识库里根本没有相关内容——<b>这是一个可靠的「该拒答」信号，且完全在模型之外</b>。</p>
+
+  <p><b>一致性信号</b>：对同一问题采样多次，看答案是否稳定。<b>不一致 = 不可靠</b>，这是一个相当稳健的启发式。代价是成本翻几倍，适合用在高价值或高风险的请求上。</p>
+
+  <p><b>校验信号</b>：答案是否包含有效引用、是否可被规则验证（数字是否在材料中出现、日期是否合理）、是否与已知事实冲突。</p>
+
+  <div class="callout">
+    <p><b>一条容易被忽略的产品原则：不确定性要传达给用户，而不只是用于内部决策。</b>「以下信息来自 2023 年的文档，可能已更新」「我在资料中只找到部分相关内容」——这类表述把判断权交还给用户，成本极低，却能显著降低错误答案造成的实际损害。<b>Air Canada 那个案例的核心教训正在于此</b>：系统给出的信息会被用户当真，并据此行动。</p>
+  </div>
+</section>
+
+<!-- ================= 案例 ================= -->
+<section id="case">
+  <div class="sec-tag"><span class="cell" style="background:var(--waste)"></span><span class="lab">Case Study 真实案例</span></div>
+  <h2>Moffatt v. Air Canada：聊天机器人说的话算数</h2>
+
+  <div class="case">
+    <div class="case-head"><span class="cell"></span>加拿大不列颠哥伦比亚省民事解决法庭 · 2024 年 2 月 14 日裁决</div>
+    <div class="case-body">
+      <p><b>事实经过</b>：Jake Moffatt 因祖母去世需要购买机票，在 Air Canada 网站上与其聊天机器人交互。机器人告诉他，<b>因家人去世而出行可以享受丧亲票价（bereavement fare）折扣</b>，并可在事后申请。</p>
+      <p>这个回答是<b>错误的</b>。机器人回答中链接指向的官方页面上写明：<b>丧亲政策不适用于旅行完成之后才提出的申请</b>——也就是说，正确信息就在同一个网站上、就在那个链接里，而机器人给出了与之矛盾的说法。</p>
+      <div class="stats">
+        <div class="stat"><div class="n bad">$812.02</div><div class="l">法庭判决 Air Canada 需支付的赔偿（加元）</div></div>
+        <div class="stat"><div class="n bad">疏忽性失实陈述</div><div class="l">裁定成立的诉因（negligent misrepresentation）</div></div>
+        <div class="stat"><div class="n bad">抗辩被驳回</div><div class="l">「聊天机器人是独立实体」的主张未获支持</div></div>
+      </div>
+      <p><b>Air Canada 的抗辩最值得记住</b>：航司主张聊天机器人虽然在其网站上，但<b>应被视为一个独立的实体</b>，因此公司不对其不准确之处负责。法庭<b>驳回</b>了这一主张，认定 Air Canada 需要对<b>其网站上的全部信息负责，无论这些信息来自静态页面还是聊天机器人</b>。</p>
+      <p><b>三条工程含义</b>：</p>
+      <p><b>① 幻觉是法律责任，不只是质量问题。</b>「模型有时会出错」不是一个可以向用户或监管转移的免责条款。<b>把幻觉的风险定价进产品设计</b>，而不是当作技术缺陷来容忍。</p>
+      <p><b>② 与权威信息源不一致是最危险的一类幻觉。</b>本案中正确答案就在同一网站上——这类矛盾比「模型不知道」更严重，因为它<b>主动覆盖了正确信息</b>。工程上的对策很直接：对政策、价格、条款这类有唯一权威来源的内容，<b>应该走确定性的检索或规则，而不是让模型自由生成</b>；至少要做输出与权威源的一致性校验。</p>
+      <p><b>③ 赔偿金额小，但先例意义大。</b>812 加元对一家航司微不足道，真正的成本是它确立了「企业为其 AI 输出负责」这一预期。<b>在做面向用户的、涉及政策/权益/价格的 AI 功能时，这应当直接影响你的拒答阈值与人工复核设计。</b></p>
+      <p><b>说明</b>：本案信息取自公开的法庭裁决与公开报道。此处仅陈述公开可查的事实与其工程含义，不作法律建议——具体的合规要求请咨询法务。</p>
+      <div class="src">来源：Moffatt v. Air Canada, 2024 BCCRT（加拿大不列颠哥伦比亚省民事解决法庭），2024 年 2 月 14 日裁决，及公开报道。事实与裁决要点均引自公开信息。</div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 工具层 ================= -->
+<section id="tools">
+  <div class="sec-tag"><span class="cell" style="background:var(--free)"></span><span class="lab">Tooling Sidebar 工具层</span></div>
+  <div class="toolbox">
+    <div class="toolbox-head">
+      <span class="t">落地手段（会过期，正文不依赖本区块）</span>
+      <span class="date">截至 2026-08</span>
+    </div>
+    <div class="toolbox-body">
+      <p><b>结构化引用</b>：用约束解码或 structured outputs 强制模型输出 <code>{"answer": ..., "citations": [chunk_id, ...]}</code> 的结构，然后<b>程序校验每个 chunk_id 是否真的在本次召回集合里</b>。这一步是零成本的，却能挡掉「编造引用编号」这一整类问题。</p>
+      <p><b>Groundedness 校验</b>：用小模型逐句判断「这句话是否被引用的材料支持」。可用 RAGAS 等库的现成实现，<b>但必须先用人工标注校准</b>（<a href="6-4-eval-pipeline.html">6.4</a>）。用小模型做这件事成本很低，适合全量在线跑。</p>
+      <p><b>检索分数阈值</b>：把「最高相似度低于阈值即直接拒答，不调用生成模型」做成一条硬规则。<b>这是性价比最高的一条防线</b>——它在模型开口之前就阻止了无据回答，且顺带省了一次生成调用的钱。</p>
+      <p><b>一致性采样</b>：对高风险请求采样多次比对答案一致性。成本高，<b>只用在值得的地方</b>（医疗、法律、金融、涉及金额的判断）。</p>
+      <p><b>面向用户的呈现</b>：把引用做成可点击的原文跳转、把不确定性显式写出来、对超出知识范围的问题给出明确的转人工入口。<b>这些产品层的设计对降低实际损害的作用，常常大于任何模型层的优化。</b></p>
+    </div>
+  </div>
+</section>
+
+<!-- ================= Quiz ================= -->
+<section id="quiz">
+  <div class="sec-tag"><span class="cell"></span><span class="lab">Quiz 自测</span></div>
+  <h2>章末自测</h2>
+  <div class="quiz">
+
+    <details>
+      <summary><span class="qtype">概念题</span>为什么说「让模型自己报告置信度」不是一个可靠的方案？有哪些更好的信号？</summary>
+      <div class="answer">
+        <p><b>不可靠的原因</b>：模型没有一个内在的、可校准的「我知道 vs 我不知道」表示。它被训练来生成合理的续写，而「我有 85% 的把握」这句话本身也只是一段被生成的文本——它更多反映了训练语料中类似语境下的表述习惯，而非模型内部的实际不确定性。此外这类自评容易被提问方式、上下文语气影响。</p>
+        <p><b>更可靠的是外部信号</b>：</p>
+        <p><b>① 检索侧分数（最实用）</b>：召回材料的最高相似度、rerank 分数。若最相关的材料相似度都很低，说明知识库里没有相关内容。<b>这个信号完全在模型之外产生，不受模型自我认知的影响</b>，且可以做成「低于阈值直接拒答、不调用生成」的硬规则。</p>
+        <p><b>② 一致性</b>：同一问题采样多次，答案不稳定即不可靠。这是一个稳健的启发式，代价是成本翻倍，适合高风险请求。</p>
+        <p><b>③ 可程序校验的信号</b>：引用编号是否真实存在于召回集合、答案中的数字/日期是否出现在材料中、输出是否通过 schema 校验。<b>这类确定性检查最可靠，且几乎零成本。</b></p>
+        <p><b>通用原则</b>：<b>优先使用模型之外的、可程序判定的信号</b>——它们不依赖模型的自我认知，也不会被同一个失效模式同时影响。</p>
+      </div>
+    </details>
+
+    <details>
+      <summary><span class="qtype">场景判断</span>企业知识库助手上线后，用户反馈「有时给的答案在文档里根本找不到」。按什么顺序排查和修复？</summary>
+      <div class="answer">
+        <p><b>第一步：先归因，不要先改 prompt。</b>拿失败案例，看<b>召回的材料原文</b>，判断落在哪一类（<a href="3-5-rag-eval.html">3.5</a> 的归因矩阵）：</p>
+        <p><b>情况 A：材料根本没召回到。</b>模型面对空白或不相关的材料，只能靠参数化知识发挥。这是<b>检索问题</b>——改切分、加 BM25 混合检索、调 top-k（<a href="3-2-chunking.html">3.2</a>、<a href="3-3-hybrid-search-rerank.html">3.3</a>）。<b>此时无论怎么改 prompt 都治标不治本。</b></p>
+        <p><b>情况 B：材料召回了，但模型说了材料里没有的话。</b>这是<b>生成问题</b>，按以下顺序修：① prompt 中<b>明确要求仅依据材料回答，并授权拒答</b>且给出具体表述；② 强制<b>结构化引用</b>并程序校验引用编号；③ 检查材料是否太长或关键内容位置靠中间（<a href="3-4-rag-vs-long-context.html">3.4</a>）；④ 检查召回材料之间是否互相矛盾——模型面对冲突材料时最容易自由发挥。</p>
+        <p><b>情况 C：材料本身就是错的或过时的。</b>这是<b>数据问题</b>，RAG 会忠实地把错误答案讲得很有说服力。需要在索引层做时效性管理与冲突检测。</p>
+        <p><b>无论哪一类，都应补上的两道防线</b>：<br>• <b>检索分数阈值</b>——最高相似度低于阈值就直接拒答，不调用生成模型。这一条能一次性堵住情况 A 的大部分损害。<br>• <b>拒答率监控</b>——把它做成一等指标。拒答率异常下降往往意味着模型开始编造。</p>
+        <p><b>最后是产品层</b>：把引用做成可点击跳转到原文。这既降低了错误的实际损害，也让用户能自行核对——<b>比任何模型层优化都便宜</b>。</p>
+      </div>
+    </details>
+
+    <details>
+      <summary><span class="qtype">面试题改编</span>「你们怎么解决幻觉问题？」</summary>
+      <div class="answer">
+        <p><b>第一句就要校正问题</b>：幻觉不是一个能被「解决」的 bug，它是生成机制的固有产物——模型被训练来产出最合理的续写，内部没有可靠的「我不知道」信号。<b>工程目标是让它可检测、可控、后果可承担，而不是让它消失。</b></p>
+        <p><b>然后给出三层措施</b>：</p>
+        <p><b>① 让答案可核对</b>——RAG 提供材料，强制结构化引用，<b>并程序校验引用真实性</b>（模型会编造引用编号）。引用同时抑制编造、便于用户核对、让 groundedness 可自动评估。</p>
+        <p><b>② 让模型在不确定时拒答</b>——明确授权拒答并给出具体表述、在 few-shot 里放拒答样例、用<b>检索分数阈值</b>做硬规则（低于阈值不调用生成模型）、把拒答率做成监控指标。</p>
+        <p><b>③ 让错误后果可承担</b>——高风险场景加人工复核、把不确定性传达给用户、对有唯一权威来源的内容（政策、价格、条款）走确定性检索或规则而非自由生成。</p>
+        <p><b>关键判断（这是最能体现水平的一点）</b>：<b>两类错误的代价不对称</b>——过度保守会立刻被抱怨、被发现；<b>过度自信则悄无声息</b>，用户拿到自信的错误答案可能永远不会反馈。所以默认应偏向保守一侧。而阈值的具体位置是<b>业务决策</b>（医疗法律金融偏保守，创意场景可偏激进），应由业务方而非工程师默认。</p>
+        <p><b>加分</b>：引用 Moffatt v. Air Canada（2024）——法庭裁定企业须对其网站上的全部信息负责，无论来自静态页面还是聊天机器人，「聊天机器人是独立实体」的抗辩被驳回。<b>这说明幻觉是法律责任而不仅是质量指标</b>，应当直接影响拒答阈值与复核设计。</p>
+      </div>
+    </details>
+
+  </div>
 </section>
 
 <nav class="next">
-  <a href="6-2-prompt-injection.html">← 6.2 注入攻击与工程化缓解</a>
-  <a href="6-4-eval-pipeline.html">6.4 离线 eval / 在线 A/B / 回归测试 →</a>
+  <a href="6-2-prompt-injection.html">← 6.2 Prompt Injection 与安全</a>
+  <a href="6-4-eval-pipeline.html">6.4 Eval Pipeline →</a>
 </nav>
 
 </div>

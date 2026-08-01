@@ -3,7 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>6.4 离线 eval / 在线 A/B / 回归测试 · AI 系统工程手册</title>
+<title>6.4 Eval Pipeline · AI 系统工程手册</title>
+<meta name="description" content="离线 eval、在线 A/B 与回归测试三层体系。">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Noto+Sans+SC:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -20,23 +21,170 @@
 
 <header class="ch">
   <div class="blockrow" aria-hidden="true">
-    <span></span><span></span><span class="f"></span><span class="f"></span><span class="f"></span>
-    <span class="f"></span><span class="f"></span><span class="f"></span><span class="f"></span><span class="f"></span>
+    <span></span><span></span><span></span><span></span><span class="w"></span>
+    <span></span><span></span><span class="f"></span><span></span><span class="f"></span>
   </div>
   <div class="kicker">Part 6 · Production 生产化</div>
   <h1>6.4 Eval Pipeline
     <span class="zh">离线 eval / 在线 A/B / 回归测试</span>
   </h1>
+  <div class="meta">
+    <span>难度 <b>★★☆</b></span>
+    <span>阅读 <b>~14 min</b></span>
+    <span>面试出现频率 <b>高</b></span>
+    <span>前置 <b>3.5 / 4.5 / 6.1</b></span>
+  </div>
 </header>
 
+<!-- ================= 核心概念 ================= -->
 <section id="concept">
-  <div class="sec-tag"><span class="cell" style="background:var(--free)"></span><span class="lab">Draft 待撰写</span></div>
-  <p>本章尚未撰写。返回<a href="../index.html">全书目录</a>。</p>
+  <div class="sec-tag"><span class="cell"></span><span class="lab">Core Concept 核心概念</span></div>
+  <h2>三层评估各自回答一个不同的问题</h2>
+
+  <p>「我们要做 eval」这句话在不同团队里指三件完全不同的事，而它们的数据来源、运行频率、决策用途都不一样。混为一谈是常见的失败起点。</p>
+
+  <figure>
+    <svg viewBox="0 0 760 290" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="离线评估、回归测试与在线实验三层的分工">
+      <text x="20" y="24" class="lbl">三层评估：数据不同、频率不同、决策用途不同</text>
+
+      <rect x="20" y="40" width="700" height="70" rx="6" fill="var(--alloc-soft)" stroke="var(--alloc)"/>
+      <text x="38" y="64" class="lbl">① 离线评估 Offline Eval　—「这个改动方向对不对？」</text>
+      <text x="38" y="86" class="mn">固定 golden set · 开发时随时跑 · 快速迭代的方向盘</text>
+      <text x="38" y="104" class="sub">优点：快、便宜、可重复　盲点：覆盖不了真实分布，分数好 ≠ 用户满意</text>
+
+      <rect x="20" y="122" width="700" height="70" rx="6" fill="var(--waste-soft)" stroke="var(--waste)"/>
+      <text x="38" y="146" class="lbl">② 回归测试 Regression　—「有没有弄坏别的东西？」</text>
+      <text x="38" y="168" class="mn">历史失败案例集 + 关键能力集 · 每次提交自动跑 · 发布门禁</text>
+      <text x="38" y="186" class="sub">这一层最常被跳过，也最常导致「修好一处、弄坏两处」</text>
+
+      <rect x="20" y="204" width="700" height="70" rx="6" fill="var(--alloc)"/>
+      <text x="38" y="228" class="lbl" fill="var(--on-fill)">③ 在线实验 Online A/B　—「用户真的更满意了吗？」</text>
+      <text x="38" y="250" class="onfill">真实流量 · 按业务指标判定 · 最终裁决</text>
+      <text x="38" y="268" class="onfill">唯一能回答「有没有业务价值」的一层，但慢、贵、有风险</text>
+    </svg>
+    <figcaption><b>图 1 · 三层的分工。</b>它们是<b>递进而非替代</b>的关系：离线评估筛掉明显不行的方向，回归测试守住已有质量，在线实验做最终裁决。<b>只有第三层能回答业务问题，但如果只有第三层，你的迭代速度会慢到无法工作。</b></figcaption>
+  </figure>
+
+  <p><b>最常见的两种失衡</b>：只有①的团队会不断把离线分数刷高，却发现线上没有任何改善；只有③的团队每个改动都要跑一周实验，迭代速度慢到无法承受，且无法归因。<b>②几乎总是被跳过的那一层</b>，而它恰恰是维持长期质量的关键——因为 LLM 系统的改动极易产生非局部的影响。</p>
+
+  <h3>Golden set 的治理：它会腐坏</h3>
+  <p>评估集不是建好就一劳永逸的资产，它有三个必须主动管理的问题：</p>
+
+  <p><b>① 过拟合。</b>反复在同一个评估集上迭代，你会逐渐把系统调成「在这 200 条上表现好」，而非「真的更好」。<b>缓解</b>：保留一个<b>从不用于迭代、只在重大发布前跑一次</b>的保留集（holdout）；定期从线上补充新样本。</p>
+
+  <p><b>② 分布漂移。</b>用户的问法、场景、热点都在变。半年前建的评估集可能已经不代表今天的流量。<b>缓解</b>：定期（如每季度）用线上真实分布重新采样一批，检查评估集的代表性。</p>
+
+  <p><b>③ 覆盖偏差。</b>凭空编写的问题会集中在系统本来就擅长的区域。<b>最有价值的样本来自线上失败</b>——用户重问的、点踩的、转人工的（<a href="6-1-observability.html">6.1</a> 的代理信号正是它的来源）。</p>
+
+  <div class="callout">
+    <p><b>一条务实的建议：把「每次修复一个线上问题，就把它加进回归集」变成团队纪律。</b>这是成本最低、复利最高的做法——评估集会随着系统的成长自动积累它真实的弱点分布，而不需要任何专门的建设项目。<b>大多数优秀的评估集都是这样长出来的，不是设计出来的。</b></p>
+  </div>
+
+  <h3>LLM-as-judge：好用，但必须先校准</h3>
+  <p>用模型给模型的输出打分，是让评估规模化的主要手段。它确实有效，但有三个必须处理的问题：</p>
+
+  <p><b>① 必须校准。</b>这是使用 LLM 评委的<b>前提而非可选项</b>：拿 50–100 条<b>人工标注</b>过的样本，检查评委的判定与人工判定的一致率。<b>一致率不达标的评委，它给出的所有分数都是噪声</b>——而你会拿这些噪声去做发布决策。校准之后还要定期重测，因为换模型或改 prompt 都会改变评委的行为。</p>
+
+  <p><b>② 已知的系统性偏差。</b>LLM 评委倾向于<b>更长的回答</b>、<b>格式更漂亮的回答</b>、以及<b>与自己风格相似的回答</b>。在做 A/B 对比时还存在<b>位置偏差</b>（倾向选择放在前面或后面的那个）。<b>对策</b>：交换位置各评一次取平均、在评分标准中明确「长度不是评判依据」、优先使用<b>二元或少档位的判定</b>（「是否忠实于材料」）而非 1–10 打分——细粒度分数的噪声远大于其信息量。</p>
+
+  <p><b>③ 能程序判定的，就不要用模型判定。</b>JSON 是否可解析、引用编号是否存在、枚举值是否合法、数字是否与材料一致——这些用代码判定既免费又确定。<b>把 LLM 评委留给真正需要语义判断的少数环节</b>，这既省钱又让评估结果更可信。</p>
+
+  <h3>在线实验的两个特殊困难</h3>
+  <p><b>① 业务指标信噪比低。</b>LLM 改动对留存、转化这类终极指标的影响通常很小，需要很大的样本量和很长的时间才能显著。<b>对策</b>：使用更敏感的<b>中间指标</b>——重新生成率、点踩率、转人工率、会话完成率。它们与质量的相关性强，且响应快得多。</p>
+
+  <p><b>② 灰度必须能按版本分桶。</b>如果监控无法区分新旧版本的流量，A/B 的结论会被混合污染。这要求 <a href="6-1-observability.html">6.1</a> 的 trace 里记录了版本信息——<b>评估体系依赖可观测性体系，两者必须一起建。</b></p>
+</section>
+
+<!-- ================= 案例 ================= -->
+<section id="case">
+  <div class="sec-tag"><span class="cell" style="background:var(--waste)"></span><span class="lab">Case Study 案例</span></div>
+  <h2>一个没校准的评委带来的三周弯路（匿名化）</h2>
+
+  <div class="case">
+    <div class="case-head"><span class="cell"></span>离线分数一路上涨，线上指标纹丝不动</div>
+    <div class="case-body">
+      <p><b>背景</b>：一个客服问答产品，团队搭了 LLM-as-judge 的自动评估：让模型给回答打 1–10 分，取平均作为质量指标。</p>
+      <p><b>过程</b>：三周里做了几轮 prompt 优化，离线平均分从 7.2 稳步涨到 8.4。团队很受鼓舞。但线上的代理信号——点踩率、转人工率——<b>完全没有变化</b>。</p>
+      <p><b>排查</b>：团队做了一件本该在最开始做的事——<b>抽 80 条样本人工标注，与评委的打分做对比</b>。结果：</p>
+      <div class="stats">
+        <div class="stat"><div class="n bad">相关性很弱</div><div class="l">评委分数与人工判断的一致性远低于预期</div></div>
+        <div class="stat"><div class="n bad">长度偏好</div><div class="l">回答越长，评委给分越高，与正确性关系不大</div></div>
+        <div class="stat"><div class="n bad">格式偏好</div><div class="l">带项目符号和小标题的回答显著得分更高</div></div>
+      </div>
+      <p><b>真相</b>：三周的「优化」实际上做的是<b>让回答变得更长、更有条理</b>——这确实提升了评委给的分数，但对用户能否解决问题几乎没有影响。<b>团队优化的是评委的偏好，不是产品的质量。</b></p>
+      <p><b>修复</b>：<br><b>①</b> 把 1–10 打分改成<b>几个二元判定</b>：「是否回答了用户的问题」「是否忠实于检索材料」「是否包含有效引用」。<b>二元判定的一致率远高于细粒度打分</b>——因为它不需要评委在「7 分还是 8 分」这种本就没有客观标准的问题上做判断。<br><b>②</b> 把能程序判定的部分（引用编号是否存在、是否包含拒答表述、JSON 是否合法）<b>从评委手里拿走</b>，改用代码判定。<br><b>③</b> 在评分标准中明确写入<b>「回答长度与格式不作为评判依据」</b>。<br><b>④</b> 建立<b>校准流程</b>：每次修改评委 prompt 或更换评委模型后，必须用人工标注样本重测一致率，不达标不投入使用。</p>
+      <p><b>三条教训</b>：<br><b>①</b> <b>未校准的评委比没有评委更危险</b>——它给了你一个可以持续优化的数字，让整个团队朝错误方向努力，而且看起来一切正常。<br><b>②</b> <b>细粒度打分是个陷阱。</b>「这个回答值 7 分还是 8 分」没有客观答案，评委在这个问题上的输出主要是噪声。<b>二元或三档判定的信息量更高</b>。<br><b>③</b> <b>离线指标必须与线上信号对齐验证。</b>如果离线分数涨了而线上代理信号毫无反应，<b>首先该怀疑的是指标本身，而不是「线上信号不敏感」</b>。这个反射是这次事故最该被内化的一点。</p>
+      <div class="src">说明：本案例为综合多个真实项目的<b>匿名化复盘</b>，不含任何可识别的公司、产品或个人信息。分数变化为叙述性描述，非某次具体实验的测量数据。</div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 工具层 ================= -->
+<section id="tools">
+  <div class="sec-tag"><span class="cell" style="background:var(--free)"></span><span class="lab">Tooling Sidebar 工具层</span></div>
+  <div class="toolbox">
+    <div class="toolbox-head">
+      <span class="t">评估工具链（会过期，正文不依赖本区块）</span>
+      <span class="date">截至 2026-08</span>
+    </div>
+    <div class="toolbox-body">
+      <p><b>评估框架</b>：Langfuse / LangSmith / Braintrust（与 trace 打通，可直接从线上日志构造数据集）、DeepEval、RAGAS（RAG 专用指标）、promptfoo（轻量、配置驱动，适合接 CI）。<b>选型的关键是能否与你的 trace 系统打通</b>——评估集最好的来源就是线上日志。</p>
+      <p><b>接入 CI</b>：把回归测试做成一条流水线，任何触及 prompt、检索配置、模型版本、工具 schema 的改动都必须跑一遍。<b>用「相对上一版本是否退化」而不是绝对分数阈值作为门禁</b>——绝对阈值会随评估集更新而失效。</p>
+      <p><b>评委模型的选择</b>：不必用最强的模型做评委。<b>对二元判定类任务，中等规模模型经过校准后通常足够</b>，成本低一个数量级，可以全量在线跑。把预算留给真正需要强模型的少数判断。</p>
+      <p><b>标注工具</b>：Argilla、Label Studio 等；小团队用带模板的表格 + 双人标注一致性检查也完全够用。<b>不要因为「没有标注平台」就不做人工标注</b>——校准所需的样本量只有几十到一百条。</p>
+      <p><b>务必做的一件事</b>：把<b>评委的判定结果与人工标注的一致率</b>本身也做成一个被追踪的指标。评委模型会被升级、评委 prompt 会被修改，<b>一致率的漂移是静默的</b>——不追踪它，你不会知道评估体系是什么时候开始失真的。</p>
+    </div>
+  </div>
+</section>
+
+<!-- ================= Quiz ================= -->
+<section id="quiz">
+  <div class="sec-tag"><span class="cell"></span><span class="lab">Quiz 自测</span></div>
+  <h2>章末自测</h2>
+  <div class="quiz">
+
+    <details>
+      <summary><span class="qtype">概念题</span>为什么说「未校准的 LLM 评委比没有评委更危险」？</summary>
+      <div class="answer">
+        <p><b>因为它提供的是一个可以被持续优化的错误信号，而不是明显的缺失。</b></p>
+        <p>没有评委时，团队知道自己缺少评估手段，会保持谨慎、会依赖人工抽查和线上反馈。<b>而未校准的评委给出一个看起来专业的数字</b>，团队会围绕它做决策、把它写进周报、用它做发布门禁——<b>整个组织朝着一个未经验证的方向持续用力，而所有仪表都显示正常。</b></p>
+        <p><b>具体的失效机制</b>：LLM 评委有已知的系统性偏差——偏好更长的回答、格式更漂亮的回答、与自己风格相近的回答，以及 A/B 对比时的位置偏差。围绕这样的评委优化，实际优化的是<b>这些偏差对应的表面特征</b>，而非真实质量。案例中三周的「优化」只是让回答变长变整齐，线上指标纹丝不动。</p>
+        <p><b>校准怎么做</b>：拿 50–100 条人工标注样本，测评委判定与人工判定的一致率。<b>并且这不是一次性的</b>——评委模型升级或评委 prompt 修改后必须重测，一致率的漂移是静默的。<b>把一致率本身做成被追踪的指标。</b></p>
+        <p><b>降低对评委依赖的两个办法</b>：能程序判定的（JSON 合法性、引用是否存在、枚举值）一律用代码；需要语义判断的优先用<b>二元判定</b>而非 1–10 打分——细粒度分数的噪声大于信息量。</p>
+      </div>
+    </details>
+
+    <details>
+      <summary><span class="qtype">场景判断</span>离线评估分数提升明显，但上线后线上指标毫无变化。可能的原因有哪些？</summary>
+      <div class="answer">
+        <p>按<b>可能性从高到低</b>排查：</p>
+        <p><b>① 评估指标本身有问题（最常见）。</b>评委未校准、存在长度/格式偏好、或指标测的不是用户真正在乎的东西。<b>验证方法</b>：抽样人工标注，看离线分数与人工判断的一致性。<b>这应该是第一个怀疑对象，而不是最后一个。</b></p>
+        <p><b>② 评估集不代表真实分布。</b>golden set 可能覆盖偏差严重——集中在系统本来就擅长的区域，或来自半年前已经漂移的分布。改动在评估集覆盖的场景上有效，但那些场景只占真实流量的一小部分。</p>
+        <p><b>③ 数据泄漏 / 过拟合评估集。</b>反复在同一评估集上迭代，把系统调成了「在这 200 条上表现好」。<b>这就是保留集（holdout）存在的理由</b>——用一个从不参与迭代的集合验证。</p>
+        <p><b>④ 线上指标不够敏感。</b>留存、转化这类终极指标信噪比低，小改动测不出来。<b>换更敏感的中间指标</b>——重新生成率、点踩率、转人工率、会话完成率。<b>注意：这个原因应该排在后面，先怀疑指标而不是先怀疑线上信号。</b></p>
+        <p><b>⑤ 改动确实真实但影响面小。</b>比如优化的是只占 3% 流量的场景，整体指标自然看不出来。<b>验证方法</b>：只在受影响的流量子集上看指标。</p>
+        <p><b>⑥ 实验设计问题。</b>分桶不干净、样本量不足、观察期太短、或监控无法按版本分桶导致新旧流量混在一起。</p>
+      </div>
+    </details>
+
+    <details>
+      <summary><span class="qtype">架构评审</span>为一个刚起步的 LLM 产品设计评估体系，团队只有 3 个人。你会建议先做什么、后做什么？</summary>
+      <div class="answer">
+        <p><b>原则：从最便宜、最能防止灾难的开始，不要一上来建完整体系。</b>三人团队做全套评估基础设施必然烂尾。</p>
+        <p><b>第一周做的（成本几乎为零，价值最高）</b>：<br><b>①</b> <b>结构性指标</b>——JSON/schema 校验失败率、工具调用失败率、拒答率、引用缺失率。可程序判定、零标注成本、可直接告警（<a href="6-1-observability.html">6.1</a>）。<br><b>②</b> <b>线上代理信号</b>——重新生成率、点踩率、转人工率。埋点很简单，能立刻感知质量变化。<br><b>③</b> <b>trace 记录版本信息</b>——模型版本、prompt 版本。没有它，后面所有归因都做不了。</p>
+        <p><b>第一个月做的</b>：<br><b>④</b> <b>回归集，用最省力的方式积累</b>——把纪律定成「每修复一个线上问题，就把它加进回归集」。<b>不要专门立项建评估集</b>，让它随系统成长自然长出来。目标是几十条，不是几百条。<br><b>⑤</b> <b>一个能跑回归集的脚本</b>，接进发布流程。哪怕只是手动跑，也远好于没有。</p>
+        <p><b>第二三个月做的</b>：<br><b>⑥</b> <b>LLM-as-judge，但先校准</b>——用二元判定而非打分，用 50–100 条人工标注测一致率。<b>如果一致率不达标，宁可先不用</b>。<br><b>⑦</b> <b>保留集</b>——从回归集里划出一部分从不用于迭代。</p>
+        <p><b>暂时不做的</b>：完整的 A/B 实验平台（流量不够，统计功效不足，先用灰度 + 代理信号观察）、复杂的标注平台（表格够用）、追求评估集规模（100 条覆盖全面的样本 &gt; 1000 条同质样本）。</p>
+        <p><b>贯穿的判断</b>：<b>评估体系的价值不在于精确度量质量，而在于「改坏了能被发现」。</b>三人团队最该防的是回归退化，而不是精确排名两个 prompt 的优劣。</p>
+      </div>
+    </details>
+
+  </div>
 </section>
 
 <nav class="next">
   <a href="6-3-hallucination.html">← 6.3 幻觉的工程化缓解</a>
-  <a href="6-5-degradation-fallback.html">6.5 降级与回退策略 →</a>
+  <a href="6-5-degradation-fallback.html">6.5 Degradation 与 Fallback →</a>
 </nav>
 
 </div>

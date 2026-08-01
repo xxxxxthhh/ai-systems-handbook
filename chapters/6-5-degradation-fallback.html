@@ -3,7 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>6.5 降级与回退策略 · AI 系统工程手册</title>
+<title>6.5 Degradation 与 Fallback · AI 系统工程手册</title>
+<meta name="description" content="上游模型故障、限流与降级策略，以及公开 postmortem 的启示。">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Noto+Sans+SC:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -20,22 +21,196 @@
 
 <header class="ch">
   <div class="blockrow" aria-hidden="true">
-    <span></span><span></span><span class="f"></span><span class="f"></span><span class="f"></span>
-    <span class="f"></span><span class="f"></span><span class="f"></span><span class="f"></span><span class="f"></span>
+    <span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span>
+    <span class="w"></span><span class="w"></span>
   </div>
   <div class="kicker">Part 6 · Production 生产化</div>
   <h1>6.5 Degradation &amp; Fallback
-    <span class="zh">降级与回退策略</span>
+    <span class="zh">上游会挂，你的系统该怎么办</span>
   </h1>
+  <div class="meta">
+    <span>难度 <b>★★☆</b></span>
+    <span>阅读 <b>~14 min</b></span>
+    <span>面试出现频率 <b>中高</b></span>
+    <span>前置 <b>2.1 / 6.1</b></span>
+  </div>
 </header>
 
+<!-- ================= 核心概念 ================= -->
 <section id="concept">
-  <div class="sec-tag"><span class="cell" style="background:var(--free)"></span><span class="lab">Draft 待撰写</span></div>
-  <p>本章尚未撰写。返回<a href="../index.html">全书目录</a>。</p>
+  <div class="sec-tag"><span class="cell"></span><span class="lab">Core Concept 核心概念</span></div>
+  <h2>四种失效模式，只有第一种会报错</h2>
+
+  <p>把模型 API 当作一个依赖来做可靠性设计时，需要区分四种失效——它们的检测手段和应对方式完全不同，<b>而只有第一种会以异常的形式告诉你</b>：</p>
+
+  <div class="tbl-scroll">
+  <table>
+    <thead><tr><th>失效模式</th><th>表现</th><th>检测</th><th>应对</th></tr></thead>
+    <tbody>
+      <tr><td><b>① 完全不可用</b></td><td>5xx、连接失败</td><td>容易——错误率飙升</td><td>重试、切备用供应商、降级</td></tr>
+      <tr><td><b>② 限流</b></td><td>429、配额耗尽</td><td>容易，但<b>常在流量高峰才暴露</b></td><td>客户端限流、队列、优先级、多 key</td></tr>
+      <tr><td><b>③ 延迟劣化</b></td><td>能用，但慢到不可接受</td><td>中等——需要监控分位数</td><td>超时 + 熔断，<b>切勿无限等待</b></td></tr>
+      <tr><td><b>④ 质量劣化</b></td><td>正常返回，答案变差</td><td><b>最难</b>——无任何异常信号</td><td>质量监控 + 版本锁定（本章重点）</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <p><b>第④种是 LLM 系统独有的，也是最容易被忽略的。</b>供应商更新了模型、调整了默认参数、或对某类内容加强了安全策略——你的代码没变、指标全绿，但输出行为已经改变了。这与 <a href="6-1-observability.html">6.1</a> 的主题一脉相承：<b>凡是不会报错的故障，都必须被显式地观测。</b></p>
+
+  <h3>降级阶梯：想清楚「退到哪里」</h3>
+  <p>降级设计的核心不是「出错了怎么办」，而是<b>「在完全正常和完全不可用之间，有哪些中间状态是可接受的」</b>。把它想成一个阶梯，逐级下降：</p>
+
+  <figure>
+    <svg viewBox="0 0 760 300" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="从正常服务到完全降级的多级阶梯">
+      <text x="20" y="24" class="lbl">降级阶梯：每一级都比「报错」好</text>
+
+      <rect x="20" y="40" width="620" height="34" rx="5" fill="var(--alloc)"/>
+      <text x="36" y="62" class="onfill">L0 · 正常服务 —— 主模型，完整功能</text>
+
+      <rect x="60" y="82" width="580" height="34" rx="5" fill="var(--alloc)"/>
+      <text x="76" y="104" class="onfill">L1 · 重试 —— 指数退避 + 抖动，应对瞬时抖动</text>
+
+      <rect x="100" y="124" width="540" height="34" rx="5" fill="var(--alloc-soft)" stroke="var(--alloc)"/>
+      <text x="116" y="146" class="mn">L2 · 切换供应商 / 备用模型 —— 质量可能略降，功能完整</text>
+
+      <rect x="140" y="166" width="500" height="34" rx="5" fill="var(--waste-soft)" stroke="var(--waste)"/>
+      <text x="156" y="188" class="mn">L3 · 降级功能 —— 只做检索并展示原文，不做生成</text>
+
+      <rect x="180" y="208" width="460" height="34" rx="5" fill="var(--waste-soft)" stroke="var(--waste)"/>
+      <text x="196" y="230" class="mn">L4 · 缓存 / 兜底回答 —— 常见问题走预置答案</text>
+
+      <rect x="220" y="250" width="420" height="34" rx="5" fill="var(--waste)"/>
+      <text x="236" y="272" class="onfill">L5 · 明确告知 + 转人工 —— 诚实地失败，保留出口</text>
+
+      <text x="660" y="62" class="sub">好</text>
+      <text x="660" y="272" class="sub">差</text>
+      <line x1="668" y1="70" x2="668" y2="258" stroke="var(--line)" stroke-width="2"/>
+    </svg>
+    <figcaption><b>图 1 · 降级阶梯。</b>关键洞察是 <b>L3</b>：RAG 系统在模型不可用时，<b>检索层通常仍然健康</b>——直接把召回的原文段落展示给用户，虽然不如生成的答案好用，但<b>远好于一个错误页面</b>，而且信息是准确的。<b>大多数团队从未想过这一级，因为他们把「LLM 应用」看成一个整体，而不是可分层降级的系统。</b></figcaption>
+  </figure>
+
+  <h3>三个必须做对的基础件</h3>
+
+  <p><b>① 超时必须设，且要分层设。</b>不设超时是最常见的错误——一个卡住的上游请求会占住连接、耗尽线程池，把局部故障放大成全站雪崩。流式场景要注意：<b>需要同时设「首字超时」和「整体超时」</b>，因为一个已经开始吐字但吐得极慢的请求，用单一的整体超时是抓不住的（<a href="2-1-latency-metrics.html">2.1</a> 的 TTFT/TPOT 分解在这里直接有用）。</p>
+
+  <p><b>② 重试必须带退避和抖动。</b>固定间隔的重试会在上游恢复瞬间制造<b>惊群</b>，把刚缓过来的服务再次打垮。必须用指数退避 + 随机抖动。<b>并且要区分该重试和不该重试的错误</b>：429 和 5xx 可以重试；400（参数错误）、401（鉴权失败）、内容策略拒绝重试多少次都是一样的结果，只是在浪费配额和时间。</p>
+
+  <p><b>③ 熔断器保护自己也保护上游。</b>连续失败达到阈值后直接快速失败，不再发起请求，定期试探恢复。它的价值是双向的：既避免自己的线程被拖死，也<b>给上游留出恢复空间</b>——持续重试会阻碍对方恢复。</p>
+
+  <h3>质量劣化：LLM 独有的那一类</h3>
+  <p>前面三件是通用的分布式系统实践，而第④类失效需要 LLM 特有的应对：</p>
+
+  <p><b>① 锁定模型版本。</b>凡是供应商提供带日期/版本后缀的模型标识，<b>生产环境一律使用具体版本而非「latest」别名</b>。别名会在你不知情时指向新模型。代价是需要主动跟进版本弃用通知，但这个代价远小于某天早上发现输出行为变了却找不到原因。</p>
+
+  <p><b>② 把模型版本记进 trace。</b>这样质量波动才能与版本变更对齐（<a href="6-1-observability.html">6.1</a>）。<b>没有这个字段，你永远无法证明「是他们改了」。</b></p>
+
+  <p><b>③ 用金丝雀集持续探测。</b>准备一小组固定的输入（几十条即可），<b>定时调用并比对输出</b>。输出的结构性变化——长度分布突变、拒答率突变、格式合规率下降——是模型行为变化的早期信号。这比等用户投诉早得多，成本也极低。</p>
+
+  <p><b>④ 备用供应商要真的验证过。</b>「我们有备用方案」如果从未在真实流量上验证过，那它在故障时大概率也不能用——不同供应商的 prompt 行为、格式遵循、拒答边界都不同，切过去可能引发一场新的事故。<b>备用路径必须定期演练</b>，哪怕只是每月切 1% 流量过去跑一天。</p>
+</section>
+
+<!-- ================= 案例 ================= -->
+<section id="case">
+  <div class="sec-tag"><span class="cell" style="background:var(--waste)"></span><span class="lab">Case Study 公开 Postmortem</span></div>
+  <h2>OpenAI 2024 年 12 月 11 日故障：一次遥测变更引发的全站不可用</h2>
+
+  <div class="case">
+    <div class="case-head"><span class="cell"></span>公开事故复盘 · 依赖方视角的启示</div>
+    <div class="case-body">
+      <p><b>事故经过（据其公开的事故报告）</b>：2024 年 12 月 11 日太平洋时间 15:16 至 19:38，OpenAI 全部服务出现严重降级或完全不可用。<b>起因不是安全事件，也不是新功能发布，而是一次向全集群推出新遥测服务的内部变更。</b></p>
+      <p><b>根因</b>：新服务的配置无意中导致<b>每个集群中的每个节点都去执行开销高昂的 Kubernetes API 操作，而这些操作的开销随集群规模增长</b>。控制平面因此被压垮，引发级联故障。</p>
+      <div class="stats">
+        <div class="stat"><div class="n bad">~4 小时</div><div class="l">15:16 – 19:38 PST 的影响窗口</div></div>
+        <div class="stat"><div class="n bad">测试未覆盖</div><div class="l">测试没有捕捉到该变更对控制平面的影响</div></div>
+        <div class="stat"><div class="n bad">DNS 缓存掩盖</div><div class="l">在变更与服务开始失败之间制造了延迟</div></div>
+        <div class="stat"><div class="n bad">工程师被锁在外面</div><div class="l">on-call 无法执行 kubectl，严重阻碍了修复</div></div>
+      </div>
+      <p><b>为什么这个案例值得应用层工程师读</b>——它不是「AI 特有」的故障，恰恰因此更有教育意义：</p>
+
+      <p><b>① 你的上游会挂，且时长以小时计。</b>这不是理论风险。一个约四小时的窗口足以让没有降级方案的产品完整地经历一次「全站不可用」。<b>把「上游 API 完全不可用 4 小时」写进你的设计假设</b>，然后回答：这段时间里用户看到什么？</p>
+
+      <p><b>② 故障源常常在「无关紧要」的变更里。</b>压垮系统的是<b>遥测服务</b>——一个用来提升可观测性的组件。这个反讽值得记住：<b>基础设施类变更同样需要完整的灰度与回滚能力</b>，不能因为「它不影响业务逻辑」就走快速通道。</p>
+
+      <p><b>③ 缓存会推迟症状，让归因变难。</b>DNS 缓存在变更与故障之间制造了时间差。这是分布式系统的通用陷阱——<b>「刚才那个变更没问题，都过了十分钟了」是一个危险的判断</b>。</p>
+
+      <p><b>④ 最值得内化的一条：修复通道本身也可能被故障波及。</b>on-call 工程师<b>被锁在集群之外，无法执行 kubectl</b>，这显著延长了恢复时间。对应到 LLM 应用上，这个模式很常见——<b>如果你的降级开关、配置中心、或运维面板本身依赖着正在故障的那个组件，那么你会在最需要它的时候失去它。</b>降级开关应当尽可能简单、独立、且可以在最小依赖下生效（例如一个静态配置文件或环境变量，而不是一个需要调用多个服务才能读到的动态配置）。</p>
+
+      <p><b>依赖方的行动清单</b>：把上游 status page 接进监控；准备 L3/L4 级降级（只检索不生成、兜底回答）；<b>演练</b>降级开关而不只是实现它；确保降级路径不依赖可能同时故障的组件。</p>
+      <div class="src">来源：OpenAI 公开发布的 2024 年 12 月 11 日事故报告（status.openai.com）及公开报道。时间、根因与贡献因素均引自公开信息；本处仅作依赖方视角的工程解读，不含任何非公开信息。</div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 工具层 ================= -->
+<section id="tools">
+  <div class="sec-tag"><span class="cell" style="background:var(--free)"></span><span class="lab">Tooling Sidebar 工具层</span></div>
+  <div class="toolbox">
+    <div class="toolbox-head">
+      <span class="t">可靠性工具（会过期，正文不依赖本区块）</span>
+      <span class="date">截至 2026-08</span>
+    </div>
+    <div class="toolbox-body">
+      <p><b>LLM 网关</b>：LiteLLM、Portkey、Cloudflare AI Gateway 等提供统一接口、自动重试、多供应商回退、限流与缓存。<b>它的主要价值是把回退逻辑从业务代码里抽出来</b>，缺点是引入了一个新的单点——<b>网关本身也需要高可用设计</b>，否则你只是把故障点搬了个家。</p>
+      <p><b>弹性库</b>：各语言的熔断/重试库（Python 的 tenacity、Java 的 Resilience4j 等）。<b>不要手写重试逻辑</b>——退避、抖动、错误分类、熔断状态机都有成熟实现，手写极易漏掉抖动或把不该重试的错误也重试了。</p>
+      <p><b>状态页监控</b>：把各供应商的 status page 或其 API 接进自己的告警。<b>知道「是他们挂了」而不是「我们挂了」能极大缩短排查时间</b>——这是一条投入极低的信息通道。</p>
+      <p><b>批处理 API</b>：对可容忍延迟的任务（离线分析、批量生成），使用各家的批处理接口通常有明显折扣，且<b>不与在线流量争抢配额</b>——这本身就是一种隔离设计，能防止批量任务把在线服务挤掉。</p>
+      <p><b>配额管理</b>：了解你的限流维度（RPM / TPM / 并发数）并<b>在客户端侧主动限流</b>，不要等 429。同时按业务优先级分配配额——高优先级请求应该在配额紧张时优先通过，而不是先到先得。</p>
+    </div>
+  </div>
+</section>
+
+<!-- ================= Quiz ================= -->
+<section id="quiz">
+  <div class="sec-tag"><span class="cell"></span><span class="lab">Quiz 自测</span></div>
+  <h2>章末自测</h2>
+  <div class="quiz">
+
+    <details>
+      <summary><span class="qtype">架构评审</span>为一个 RAG 客服产品设计降级方案，假设上游模型 API 完全不可用 4 小时。用户在这段时间应该看到什么？</summary>
+      <div class="answer">
+        <p><b>关键认识：RAG 系统不是一个整体，检索层和生成层会独立失效。</b>模型挂了，你的向量库、BM25 索引、重排服务通常都还好好的。<b>不要让整个产品陪着模型一起死。</b></p>
+        <p><b>按阶梯逐级设计</b>：</p>
+        <p><b>L1 重试</b>（秒级）：指数退避 + 抖动，只对 429/5xx 重试。</p>
+        <p><b>L2 切备用供应商</b>（秒级）：切到另一家的同档模型。<b>前提是这条路径定期演练过</b>——不同供应商的格式遵循和拒答边界不同，未验证的备用路径在故障时很可能引发第二场事故。</p>
+        <p><b>L3 只检索不生成</b>（这是最有价值的一级）：直接把召回的原文段落展示给用户，配上「AI 总结暂不可用，以下是相关文档原文」。<b>信息是准确的、可溯源的，对相当一部分客服场景已经够用</b>——用户本来要的就是那份文档。</p>
+        <p><b>L4 兜底回答</b>：对高频问题走预置的静态答案库（这类问题本来就该有标准答案）。</p>
+        <p><b>L5 诚实失败 + 转人工</b>：明确告知服务暂时不可用、给出预计恢复信息、提供人工客服入口。<b>诚实地失败远好于给一个错误答案或一个 500 页面。</b></p>
+        <p><b>另外必须考虑的三件事</b>：<br><b>①</b> <b>降级开关本身不能依赖正在故障的组件</b>——用静态配置或环境变量，别用一个需要调用多个服务才能读到的动态配置中心（这正是 OpenAI 那次故障中「工程师被锁在集群外」的教训）。<br><b>②</b> <b>写操作要幂等</b>——降级和重试期间可能产生重复请求。<br><b>③</b> <b>提前准备对外沟通话术</b>，不要在故障时现写。</p>
+      </div>
+    </details>
+
+    <details>
+      <summary><span class="qtype">场景判断</span>某天开始，用户反馈回答「变啰嗦了、而且经常拒绝回答」。你的代码一行没改。怎么排查？</summary>
+      <div class="answer">
+        <p><b>这是典型的第④类失效——质量劣化，无任何异常信号。</b>排查顺序：</p>
+        <p><b>① 查 trace 里的模型版本字段。</b>如果用的是 <code>latest</code> 一类的别名，供应商可能已经把它指向了新模型。<b>这是第一个该看的地方</b>，也是为什么这个字段必须被记录——没有它，你连「是不是他们改了」都无法回答。</p>
+        <p><b>② 看输出的结构性指标时间序列。</b>平均输出长度、拒答率、格式合规率、token 消耗。用户说的「啰嗦」和「拒绝回答」对应两个可量化的指标——<b>确认它们是否在某个时间点发生了阶跃</b>。阶跃点的时间是最重要的线索。</p>
+        <p><b>③ 跑金丝雀集。</b>用那组固定输入调用，与历史记录的输出比对。<b>这能在几分钟内确定「同样的输入，输出是否变了」</b>——这是区分「模型变了」和「用户输入变了」的决定性证据。</p>
+        <p><b>④ 排除自己这一侧的变更。</b>「代码一行没改」需要核实——检索索引是否重建过？知识库内容是否更新？prompt 模板是否通过配置中心被改过？<b>「没改代码」不等于「没有变更」。</b></p>
+        <p><b>⑤ 查供应商的变更公告与 status page。</b>模型更新、默认参数调整、安全策略加强都可能有公告。</p>
+        <p><b>确认是上游变更后的应对</b>：<br>• 立即<b>锁定到具体版本号</b>（若旧版本仍可用），换取排查和适配的时间；<br>• 用 <a href="6-4-eval-pipeline.html">6.4</a> 的回归集量化影响面，而不是凭感觉；<br>• 针对新模型的行为调整 prompt（拒答变多常常需要重新校准拒答的授权表述）；<br>• 把这次事件加进金丝雀集与回归集。</p>
+        <p><b>长期措施</b>：生产环境永远不用 <code>latest</code> 别名；把模型版本、输出长度分布、拒答率做成常态监控。<b>这类故障的检测能力必须提前建好，事后是补不回来的。</b></p>
+      </div>
+    </details>
+
+    <details>
+      <summary><span class="qtype">面试题改编</span>「你怎么保证 LLM 应用的可用性？」</summary>
+      <div class="answer">
+        <p><b>回答要先分类失效模式</b>——这体现你知道 LLM 依赖与普通依赖的区别：</p>
+        <p><b>① 完全不可用</b>（会报错）：超时 + 指数退避重试（带抖动，且区分可重试与不可重试的错误）+ 熔断器 + 多供应商回退。这些是通用的分布式系统实践。</p>
+        <p><b>② 限流</b>：客户端主动限流（不要等 429）、按业务优先级分配配额、可延迟任务走批处理接口与在线流量隔离。</p>
+        <p><b>③ 延迟劣化</b>：<b>分层超时</b>——流式场景要同时设首字超时和整体超时，因为一个吐字极慢的请求用单一整体超时抓不住。</p>
+        <p><b>④ 质量劣化（LLM 独有，也是最能体现水平的一点）</b>：正常返回但行为变了。应对是<b>锁定模型版本（生产绝不用 latest 别名）+ trace 记录版本 + 金丝雀集定时探测 + 输出结构性指标监控</b>。</p>
+        <p><b>然后讲降级阶梯</b>，重点是 L3：<b>RAG 系统在模型不可用时检索层通常仍健康，可以只展示召回原文而不生成</b>。这一级最能体现「把 LLM 应用看成可分层降级的系统」而非一个整体。</p>
+        <p><b>加分项</b>：<br>• <b>降级路径必须演练</b>——未验证的备用方案在故障时大概率也不能用。<br>• <b>降级开关不能依赖可能同时故障的组件</b>（引用 OpenAI 2024-12-11 事故中「on-call 工程师被锁在集群外无法执行 kubectl」的教训）。<br>• 把上游 status page 接进自己的告警。<br>• <b>明确说出设计假设</b>：「我们按上游完全不可用 4 小时来设计」——公开 postmortem 表明这个量级的故障是真实的，不是理论风险。</p>
+      </div>
+    </details>
+
+  </div>
 </section>
 
 <nav class="next">
-  <a href="6-4-eval-pipeline.html">← 6.4 离线 eval / 在线 A/B / 回归测试</a>
+  <a href="6-4-eval-pipeline.html">← 6.4 Eval Pipeline</a>
   <a href="../appendix-a-tooling.html">附录 A 工具层速查 →</a>
 </nav>
 
