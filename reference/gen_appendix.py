@@ -95,7 +95,7 @@ GLOSS = {
     "chunk": ("文本块", "文档被切分后的检索单元。「检索要小、理解要大」的两难可通过「小块检索、大块生成」解耦。"),
     "embedding": ("向量嵌入", "把文本映射为高维向量，使语义相近的文本距离相近。本质是有损压缩，优先保留大意、丢弃细节。"),
     "dense retrieval": ("稠密检索", "基于向量相似度的检索。擅长语义改写，但在精确标识符、罕见词、否定与领域外场景上有系统性盲区。"),
-    "BM25": ("BM25", "基于词频与文档长度归一的经典词法检索算法。因为不需要泛化，它在跨领域场景下依然是稳健基线。"),
+    "BM25": ("保留英文", "基于词频与文档长度归一的经典词法检索算法。因为不需要泛化，它在跨领域场景下依然是稳健基线。"),
     "RRF": ("倒数排名融合", "Reciprocal Rank Fusion。只按排名而非分数融合多路检索结果，无需归一化与调权重。"),
     "lost in the middle": ("中间迷失", "相关信息位于长上下文中部时模型利用率明显下降的现象，呈 U 形曲线。说明「塞进去不等于用得上」。"),
     "groundedness": ("忠实度", "回答中的事实性陈述能否在检索到的材料中找到依据。它比「正确率」更适合作为 RAG 生成层的核心指标，因为可自动化、可归因。"),
@@ -103,7 +103,7 @@ GLOSS = {
     "ReAct": ("推理-行动交错", "把推理轨迹与行动交错生成的 agent 循环模式。推理帮助规划与纠错，行动带来外部信息。"),
     "memory": ("记忆", "agent 语境下由应用层构造的上下文管理机制。模型本身无记忆，它「记得」只是因为你又发了一遍。"),
     "multi-agent": ("多智能体", "多个 agent 分工协作的架构。收益来自并行探索与突破单一上下文容量，代价是每条通信边都是有损压缩。"),
-    "pass^k": ("pass^k", "同一任务连续 k 次执行全部成功的概率，衡量一致性。它比单次成功率更能预测 agent 在生产中的可用性。"),
+    "pass^k": ("保留英文", "同一任务连续 k 次执行全部成功的概率，衡量一致性。它比单次成功率更能预测 agent 在生产中的可用性。"),
     "distillation": ("蒸馏", "用强模型的输出训练小模型，使其在窄任务上接近强模型。教师的错误率会被学生继承，因此数据过滤是关键。"),
     "SFT": ("有监督微调", "supervised fine-tuning，用「输入-期望输出」样本对继续训练。适用于有明确对错标准的任务。"),
     "PEFT": ("参数高效微调", "parameter-efficient fine-tuning，只训练极少量参数即可完成任务适配的一类方法。"),
@@ -223,8 +223,10 @@ def build_glossary(chs):
             num, name = CH_META[slug]
             anchor = "s01" if slug.startswith("0-") else "concept"
             body.append('<div class="gl-item">')
-            body.append('<div><span class="en">{}</span>'
-                        '<span class="zh">{}</span></div>'.format(html.escape(t), zh))
+            zh_html = ("" if zh == "保留英文"
+                       else '<span class="zh">{}</span>'.format(zh))
+            body.append('<div><span class="en">{}</span>{}</div>'
+                        .format(html.escape(t), zh_html))
             body.append('<div class="desc">{}</div>'.format(desc))
             body.append('<div class="ref">首次出现：'
                         '<a href="chapters/{}.html#{}">{} {}</a></div>'
