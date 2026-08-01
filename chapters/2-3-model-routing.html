@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>2.3 模型分级与路由 · AI 系统工程手册</title>
+<meta name="description" content="什么任务用小模型、级联与回退设计，以及路由决策的不对称代价。">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Noto+Sans+SC:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -20,22 +21,193 @@
 
 <header class="ch">
   <div class="blockrow" aria-hidden="true">
-    <span></span><span></span><span class="f"></span><span class="f"></span><span class="f"></span>
-    <span class="f"></span><span class="f"></span><span class="f"></span><span class="f"></span><span class="f"></span>
+    <span></span><span></span><span class="f"></span><span></span><span></span>
+    <span class="f"></span><span></span><span class="w"></span><span class="f"></span><span class="f"></span>
   </div>
   <div class="kicker">Part 2 · Serving &amp; Cost 服务与成本</div>
   <h1>2.3 Model Routing
-    <span class="zh">模型分级与路由</span>
+    <span class="zh">模型分级与路由：贵模型只用在刀刃上</span>
   </h1>
+  <div class="meta">
+    <span>难度 <b>★★☆</b></span>
+    <span>阅读 <b>~14 min</b></span>
+    <span>面试出现频率 <b>中高</b></span>
+    <span>前置 <b>2.1 延迟指标</b></span>
+  </div>
 </header>
 
+<!-- ================= 核心概念 ================= -->
 <section id="concept">
-  <div class="sec-tag"><span class="cell" style="background:var(--free)"></span><span class="lab">Draft 待撰写</span></div>
-  <p>本章尚未撰写。返回<a href="../index.html">全书目录</a>。</p>
+  <div class="sec-tag"><span class="cell"></span><span class="lab">Core Concept 核心概念</span></div>
+  <h2>请求的难度分布是极不均匀的</h2>
+
+  <p>几乎所有生产系统的流量都长成同一个形状：<b>大量简单请求 + 少量困难请求</b>。「帮我把这段话改得正式一点」和「分析这三份财报的矛盾之处」被同一个入口接收，然后被同一个最强的模型处理。前者用一个小两个数量级的模型也能做得很好，你却为它付了旗舰价格。</p>
+
+  <p>与此同时，模型的能力-价格谱系非常宽：同一家厂商的小模型与旗舰模型之间，单位 token 价格常常差出<b>一到两个数量级</b>，自托管的小模型更是可以把边际成本压到接近于零。<span class="term">model routing</span>（模型路由）要做的就是把这两件事对上：<b>让每个请求落到「刚好够用」的那一档模型上</b>。</p>
+
+  <p>这里的收益结构值得先算清楚。假设 80% 的请求可以由便宜 20 倍的小模型胜任：</p>
+
+  <div class="formula">全部走大模型：成本 = 1.0（基准）<br>80% 走小模型（价格 = 大模型的 1/20）：<br>　成本 = 0.8 × 0.05 + 0.2 × 1.0 = 0.04 + 0.20 = <b>0.24</b><br><br>→ 成本降到约 1/4，<b>但这个数字的上限被那 20% 死死锁住</b><br>（本式为按上述假设的自行推导，用于说明结构）</div>
+
+  <p>注意最后一行——这是路由最重要的直觉：<b>即使小模型完全免费，成本也降不到 0.20 以下</b>。困难请求构成了成本的地板。所以路由的收益天花板由「简单请求的占比」决定，而不是由「小模型有多便宜」决定。在动手之前，先去测你的流量里简单请求究竟占多少；如果只有 30%，那么再精妙的路由也救不了你。</p>
+
+  <h3>三种路由模式</h3>
+
+  <figure>
+    <svg viewBox="0 0 760 320" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="静态路由、学习式路由与级联三种模式的结构对比">
+      <!-- static -->
+      <text x="20" y="24" class="lbl">① 静态路由 — 按任务类型硬编码</text>
+      <rect x="20" y="36" width="80" height="30" rx="4" fill="var(--free)"/><text x="60" y="56" text-anchor="middle" class="mn">请求</text>
+      <path d="M104 51 L150 51" stroke="var(--ink-soft)" stroke-width="2"/>
+      <rect x="152" y="36" width="110" height="30" rx="4" fill="var(--alloc-soft)" stroke="var(--alloc)"/><text x="207" y="56" text-anchor="middle" class="mn">规则判断</text>
+      <path d="M266 44 L320 30" stroke="var(--ink-soft)" stroke-width="2"/>
+      <path d="M266 58 L320 72" stroke="var(--ink-soft)" stroke-width="2"/>
+      <rect x="322" y="16" width="120" height="28" rx="4" fill="var(--alloc)"/><text x="382" y="35" text-anchor="middle" class="onfill">小模型 · 分类/抽取</text>
+      <rect x="322" y="58" width="120" height="28" rx="4" fill="var(--waste)"/><text x="382" y="77" text-anchor="middle" class="onfill">大模型 · 推理</text>
+      <text x="456" y="56" class="sub">简单可靠，但粒度粗</text>
+
+      <!-- learned -->
+      <text x="20" y="130" class="lbl">② 学习式路由 — 预测「小模型够不够」</text>
+      <rect x="20" y="142" width="80" height="30" rx="4" fill="var(--free)"/><text x="60" y="162" text-anchor="middle" class="mn">请求</text>
+      <path d="M104 157 L150 157" stroke="var(--ink-soft)" stroke-width="2"/>
+      <rect x="152" y="142" width="110" height="30" rx="4" fill="var(--alloc-soft)" stroke="var(--alloc)"/><text x="207" y="162" text-anchor="middle" class="mn">router 模型</text>
+      <path d="M266 150 L320 136" stroke="var(--ink-soft)" stroke-width="2"/>
+      <path d="M266 164 L320 178" stroke="var(--ink-soft)" stroke-width="2"/>
+      <rect x="322" y="122" width="120" height="28" rx="4" fill="var(--alloc)"/><text x="382" y="141" text-anchor="middle" class="onfill">小模型</text>
+      <rect x="322" y="164" width="120" height="28" rx="4" fill="var(--waste)"/><text x="382" y="183" text-anchor="middle" class="onfill">大模型</text>
+      <text x="456" y="162" class="sub">粒度细，但必须「未卜先知」</text>
+
+      <!-- cascade -->
+      <text x="20" y="236" class="lbl">③ 级联 — 先便宜地试，不行再升级</text>
+      <rect x="20" y="248" width="80" height="30" rx="4" fill="var(--free)"/><text x="60" y="268" text-anchor="middle" class="mn">请求</text>
+      <path d="M104 263 L150 263" stroke="var(--ink-soft)" stroke-width="2"/>
+      <rect x="152" y="248" width="100" height="30" rx="4" fill="var(--alloc)"/><text x="202" y="268" text-anchor="middle" class="onfill">小模型</text>
+      <path d="M256 263 L300 263" stroke="var(--ink-soft)" stroke-width="2"/>
+      <rect x="302" y="248" width="100" height="30" rx="4" fill="var(--alloc-soft)" stroke="var(--alloc)"/><text x="352" y="268" text-anchor="middle" class="mn">质量检验</text>
+      <path d="M406 263 L450 263" stroke="var(--ink-soft)" stroke-width="2"/>
+      <text x="410" y="256" class="mn">通过</text>
+      <rect x="452" y="248" width="70" height="30" rx="4" fill="var(--alloc)"/><text x="487" y="268" text-anchor="middle" class="onfill">返回</text>
+      <path d="M352 282 L352 302 L452 302" stroke="var(--waste)" stroke-width="2"/>
+      <text x="360" y="298" class="mn" fill="var(--waste)">不通过</text>
+      <rect x="452" y="288" width="100" height="28" rx="4" fill="var(--waste)"/><text x="502" y="307" text-anchor="middle" class="onfill">大模型重做</text>
+      <text x="566" y="272" class="sub">判断更准，代价是失败要付两次</text>
+    </svg>
+    <figcaption><b>图 2 · 三种模式的取舍。</b>核心差异在<b>「什么时候做决定」</b>：静态和学习式路由必须在<b>看到答案之前</b>决定，级联则可以<b>看到答案之后</b>再决定——准确度更高，但升级的那部分请求要付两次成本和两倍延迟。</figcaption>
+  </figure>
+
+  <p><b>① 静态路由</b>：按任务类型硬编码。「意图分类走小模型、复杂推理走大模型」。优点是可预测、可解释、零额外延迟；缺点是粒度粗——同一类任务里也有难有易。这是绝大多数团队应该<b>先做</b>的版本，往往已经吃掉了大部分收益。</p>
+
+  <p><b>② 学习式路由</b>：训一个轻量分类器，直接预测「这个请求小模型能不能搞定」。粒度细得多，但它要解决一个本质困难——<b>在没看到答案之前判断答案好不好</b>。这个判断天然不可靠，且需要标注数据来训练。</p>
+
+  <p><b>③ 级联（cascade）</b>：先用小模型跑，再用某种手段检验结果（置信度信号、规则校验、甚至让模型自评），不合格则升级到大模型重做。它把「预测难度」换成了「验证质量」——后者通常容易得多。代价是被升级的请求付了两遍成本、两倍延迟。</p>
+
+  <div class="formula"><b>级联的盈亏平衡</b>（自行推导）<br><br>E[成本] = c_小 + p × c_大　（p = 升级率）<br>划算条件：c_小 + p × c_大 &lt; c_大　⟹　<b>p &lt; 1 − c_小/c_大</b><br><br>若小模型是大模型价格的 1/20：只要升级率 <b>p &lt; 95%</b> 就比全走大模型便宜<br>若小模型是大模型价格的 1/2：需要 <b>p &lt; 50%</b> 才划算<br><br>→ 成本上级联的门槛低得惊人；<b>真正的约束是延迟，不是成本</b></div>
+
+  <p>这个推导给出一个反直觉的结论：<b>只要两档模型的价差够大，级联在成本上几乎稳赚</b>。它真正的代价在延迟——被升级的请求要串行经历两次完整推理，P99 延迟会明显恶化。所以级联适合<b>对成本敏感、对尾部延迟宽容</b>的场景（如异步批处理、后台任务），不适合语音对话这类 TTFT 敏感的场景。</p>
+
+  <h3>路由错误的代价是不对称的</h3>
+  <p>这是设计路由时最容易被忽略的一点。两类错误的后果完全不同：</p>
+
+  <p><b>把简单请求路由到大模型</b>——多花了钱，用户毫无感知。这是一个<b>可以承受的错误</b>。</p>
+
+  <p><b>把困难请求路由到小模型</b>——用户收到一个错误或劣质的回答。这是<b>产品事故</b>，而且往往悄无声息：没有报警、没有异常日志，只有用户默默流失。</p>
+
+  <p>因此路由阈值<b>不应该按准确率最优来调，而应该按代价最优来调</b>——刻意偏保守，宁可多走一些大模型。一个实用的做法是：把阈值调到「小模型误接困难请求」的比例低于某个业务可接受的上限，然后在这个约束下最大化小模型的分流比例。<b>先定质量底线，再谈省钱。</b></p>
+</section>
+
+<!-- ================= 案例 ================= -->
+<section id="case">
+  <div class="sec-tag"><span class="cell" style="background:var(--waste)"></span><span class="lab">Case Study 真实案例</span></div>
+  <h2>RouteLLM：用偏好数据学一个路由器</h2>
+
+  <div class="case">
+    <div class="case-head"><span class="cell"></span>RouteLLM: Learning to Route LLMs from Preference Data (ICLR 2025)</div>
+    <div class="case-body">
+      <p>LMSYS 团队把「该用强模型还是弱模型」形式化成一个可学习的问题，并用一个现成的数据源来训练它：<b>Chatbot Arena 的人类偏好数据</b>——大量「同一个问题，两个模型的回答，人类选了哪个」的记录。这些数据天然编码了「哪类问题上强弱模型的差距大、哪类问题上差不多」的信息，而后者正是路由决策所需的全部。</p>
+      <div class="stats">
+        <div class="stat"><div class="n good">&gt; 85%</div><div class="l">MT Bench 上的成本下降（vs 全部使用 GPT-4）</div></div>
+        <div class="stat"><div class="n good">45%</div><div class="l">MMLU 上的成本下降</div></div>
+        <div class="stat"><div class="n good">35%</div><div class="l">GSM8K 上的成本下降</div></div>
+        <div class="stat"><div class="n good">95%</div><div class="l">同时保持的 GPT-4 性能水平</div></div>
+      </div>
+      <p><b>三个数字的差异比数字本身更有信息量。</b>同一套方法，在 MT Bench 上省 85%，在 GSM8K 上只省 35%——这不是方法不稳定，而是<b>三个基准的请求难度分布不同</b>。MT Bench 含大量开放式对话，弱模型也能给出人类满意的回答；GSM8K 是数学推理，强弱模型的能力差距真实存在且难以回避。</p>
+      <p>这印证了本章开头的判断：<b>路由的收益上限由你的流量构成决定</b>。别人报告的节省比例对你几乎没有参考价值，除非你的请求难度分布和他相似。上线路由前的第一件事不是选算法，而是<b>在自己的真实流量上测出「小模型足够好」的请求占比</b>。</p>
+      <p>另一个值得借鉴的是数据来源的选择：他们没有专门标注「这个问题难不难」，而是<b>复用了已有的偏好对比数据</b>。这个思路可以直接搬到自己的系统里——线上已有的用户重试、点踩、人工接管记录，就是现成的路由训练信号。</p>
+      <div class="src">来源：Ong et al., "RouteLLM: Learning to Route LLMs from Preference Data", arXiv:2406.18665，后发表于 ICLR 2025；数字引自论文与 LMSYS 公开博客。基线为全部使用 GPT-4。</div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 工具层 ================= -->
+<section id="tools">
+  <div class="sec-tag"><span class="cell" style="background:var(--free)"></span><span class="lab">Tooling Sidebar 工具层</span></div>
+  <div class="toolbox">
+    <div class="toolbox-head">
+      <span class="t">路由的落地形态（会过期，正文不依赖本区块）</span>
+      <span class="date">截至 2026-08</span>
+    </div>
+    <div class="toolbox-body">
+      <p><b>开源框架</b>：RouteLLM 提供可直接替换 OpenAI 客户端的路由实现，附带在偏好数据上训好的路由器；各类 LLM 网关（LiteLLM 等）普遍支持基于规则的多模型路由与自动回退。</p>
+      <p><b>厂商内置</b>：部分商业 API 已提供「自动选择模型档位」的接口形态，由服务端决定用哪一档。便利之处是零改造，代价是路由逻辑不透明、无法按自己的质量底线调整阈值——<b>对质量敏感的场景应保留自己控制路由的能力</b>。</p>
+      <p><b>路由器本身的成本</b>：学习式路由的分类器必须<b>极轻</b>（小型 embedding 模型 + 逻辑回归量级），否则路由开销会吃掉分流省下的钱，还会给每个请求加上一段固定延迟。用 LLM 做路由判断通常是错误的选择——你为了省钱又多调了一次模型。</p>
+      <p><b>与缓存的相互作用</b>：路由到不同模型意味着<b>缓存池也被分割</b>（见 <a href="2-2-prompt-caching.html">2.2</a>）。若两档模型各自维护前缀缓存，分流会降低各自的命中率。流量不大时，路由省下的钱可能抵不过缓存命中率下降的损失，值得实测。</p>
+      <p><b>必须监控的三个指标</b>：各档模型的<b>分流比例</b>、级联的<b>升级率</b>、以及<b>按档位分开统计的质量指标</b>。第三个最常被遗漏——总体质量指标会把小模型的退化平均掉，必须按档位分桶才能看见。</p>
+    </div>
+  </div>
+</section>
+
+<!-- ================= Quiz ================= -->
+<section id="quiz">
+  <div class="sec-tag"><span class="cell"></span><span class="lab">Quiz 自测</span></div>
+  <h2>章末自测</h2>
+  <div class="quiz">
+
+    <details>
+      <summary><span class="qtype">决策题</span>一个文档问答产品，日均 10 万次调用，目前全部走旗舰模型。小模型价格是旗舰的 1/15，实测在 60% 的请求上质量无差异。给出你的方案，并说明先做什么、后做什么。</summary>
+      <div class="answer">
+        <p><b>第一步：先算收益上限，判断值不值得做。</b>理想情况（60% 完美分流）成本 = 0.6 × (1/15) + 0.4 × 1 = 0.04 + 0.40 = <b>0.44</b>，即最多省 56%。<b>关键认识：那 40% 的困难请求锁死了 0.40 的成本地板</b>，任何路由方案都突破不了。如果省 56% 不足以改变项目的经济性，就不该在这上面投入。</p>
+        <p><b>第二步：先上静态路由，不要一上来就训模型。</b>把可以按规则识别的简单任务（摘要、格式化、关键词抽取、短问答）直接指向小模型。这通常能拿到理论收益的大半，且当天就能上线、随时可回滚。</p>
+        <p><b>第三步：用级联覆盖规则识别不了的部分。</b>文档问答对尾部延迟通常宽容（用户已经准备好等一会儿），符合级联的适用条件。按上文公式，价差 1/15 时只要升级率 &lt; 93% 就比全走大模型便宜——成本上几乎稳赚。检验手段优先选<b>确定性的</b>：答案是否包含有效引用、是否符合输出 schema、是否回答了问题（而非拒答）。</p>
+        <p><b>第四步：有了线上数据再考虑学习式路由。</b>级联的升级记录天然就是训练数据——「这条请求小模型失败了」就是标签。此时训路由器的边际成本很低，且能把两次调用的延迟代价降下来。</p>
+        <p><b>贯穿始终：先定质量底线。</b>上线前明确「小模型误接困难请求」的可接受上限，按它调阈值；监控必须<b>按档位分桶</b>，否则小模型的质量退化会被平均掉。灰度发布，从 10% 流量开始。</p>
+      </div>
+    </details>
+
+    <details>
+      <summary><span class="qtype">估算题</span>级联方案：小模型成本 1 单位、延迟 500ms；大模型成本 12 单位、延迟 2000ms；升级率 25%。对比全走大模型，成本与平均延迟各如何变化？P99 延迟呢？</summary>
+      <div class="answer">
+        <p><b>成本</b>：E = 1 + 0.25 × 12 = <b>4 单位</b>，相比全走大模型的 12 单位，<b>省 67%</b>。</p>
+        <p><b>平均延迟</b>：E = 500 + 0.25 × 2000 = <b>1000ms</b>，相比 2000ms <b>改善 50%</b>（75% 的请求只花 500ms 就返回了）。</p>
+        <p><b>P99 延迟</b>：这是要害。被升级的请求延迟 = 500 + 2000 = <b>2500ms</b>，比全走大模型的 2000ms <b>恶化了 25%</b>。由于升级率 25% &gt; 1%，P99 必然落在被升级的那部分里。</p>
+        <p><b>结论</b>：级联同时改善了成本和平均延迟，却<b>恶化了尾部延迟</b>——而尾部延迟恰恰是 SLA 通常约束的那个。这就是为什么级联适合异步与后台任务，在交互式场景中要格外谨慎。</p>
+        <p><b>可行的缓解</b>：对判定为「大概率会升级」的请求跳过小模型直接走大模型（即用轻量路由器为级联做预筛），把两种模式组合起来。</p>
+      </div>
+    </details>
+
+    <details>
+      <summary><span class="qtype">概念题</span>为什么说路由错误的代价是不对称的？这如何影响阈值设定？</summary>
+      <div class="answer">
+        <p><b>两类错误后果完全不同。</b>把简单请求送给大模型：多花钱，用户无感知，可测量、可容忍。把困难请求送给小模型：用户拿到劣质答案，是产品事故——而且它<b>不会触发任何报警</b>，系统一切正常，只有用户在沉默中流失。</p>
+        <p><b>对阈值的影响</b>：不能按「路由准确率最高」来调阈值，因为准确率把两类错误同等看待。应当<b>刻意偏向保守</b>：先设定「困难请求被误路由到小模型」的可接受上限（由业务定，例如 &lt; 2%），在这个硬约束下再最大化小模型的分流比例。</p>
+        <p><b>这个模式在别处也成立</b>：凡是两类错误代价不对称的判定问题（拒答设计、内容安全过滤、降级开关），都应该先固定代价高的那一侧的上限，再优化另一侧。见 <a href="6-3-hallucination.html">6.3</a> 的拒答设计。</p>
+      </div>
+    </details>
+
+    <details>
+      <summary><span class="qtype">面试题改编</span>「用一个 LLM 来判断该路由到哪个模型，这个设计有什么问题？」</summary>
+      <div class="answer">
+        <p><b>问题一：成本自相矛盾。</b>路由的目的是省钱，但你为每个请求都额外加了一次 LLM 调用。除非这个判断模型比最便宜的那一档还便宜一个数量级，否则收益会被路由开销吃掉相当一部分。</p>
+        <p><b>问题二：延迟串行叠加。</b>路由判断必须在实际调用之前完成，它的延迟<b>无法与主调用并行</b>，直接加到每一个请求的 TTFT 上——包括那些本来就要走大模型的请求。</p>
+        <p><b>问题三：判断任务本身并不需要 LLM。</b>「这个请求难不难」是一个二分类问题，用小型 embedding 模型 + 轻量分类器就能做，推理开销可以低到毫秒级且几乎零成本。用 LLM 属于杀鸡用牛刀。</p>
+        <p><b>什么时候它反而合理</b>：如果这次判断的结果<b>可以被复用</b>（例如在会话开始时判断一次，整个会话沿用），摊薄后的开销就可以接受。这是判断的关键——<b>路由开销必须能被摊薄到多次调用上，否则就不成立。</b></p>
+      </div>
+    </details>
+
+  </div>
 </section>
 
 <nav class="next">
-  <a href="2-2-prompt-caching.html">← 2.2 前缀缓存与提示词结构的反向约束</a>
+  <a href="2-2-prompt-caching.html">← 2.2 Prompt Caching</a>
   <a href="2-4-capacity-planning.html">2.4 容量规划与成本估算 →</a>
 </nav>
 

@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>2.4 容量规划与成本估算 · AI 系统工程手册</title>
+<meta name="description" content="从流量画像推导 GPU 数量与 API 预算的估算方法。">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Noto+Sans+SC:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -20,23 +21,218 @@
 
 <header class="ch">
   <div class="blockrow" aria-hidden="true">
-    <span></span><span></span><span class="f"></span><span class="f"></span><span class="f"></span>
-    <span class="f"></span><span class="f"></span><span class="f"></span><span class="f"></span><span class="f"></span>
+    <span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span>
+    <span class="w"></span><span class="f"></span>
   </div>
   <div class="kicker">Part 2 · Serving &amp; Cost 服务与成本</div>
   <h1>2.4 Capacity Planning
-    <span class="zh">容量规划与成本估算</span>
+    <span class="zh">容量规划：从流量画像到 GPU 数量</span>
   </h1>
+  <div class="meta">
+    <span>难度 <b>★★★</b></span>
+    <span>阅读 <b>~18 min</b></span>
+    <span>面试出现频率 <b>高（系统设计）</b></span>
+    <span>前置 <b>1.2 / 2.1 / 2.2</b></span>
+  </div>
 </header>
 
+<!-- ================= 核心概念 ================= -->
 <section id="concept">
-  <div class="sec-tag"><span class="cell" style="background:var(--free)"></span><span class="lab">Draft 待撰写</span></div>
-  <p>本章尚未撰写。返回<a href="../index.html">全书目录</a>。</p>
+  <div class="sec-tag"><span class="cell"></span><span class="lab">Core Concept 核心概念</span></div>
+  <h2>这一章是 Part 1 和 Part 2 的收口</h2>
+
+  <p>前面几章讲的每一件事——KV cache 占多少显存、连续批处理提高多少吞吐、量化省多少空间、缓存命中多少前缀、路由分流多少请求——最终都汇聚成同一个问题：<b>我到底需要几张卡、每月要花多少钱？</b></p>
+
+  <p>这个估算不可能精确，也不需要精确。它的目的是<b>把数量级判断对</b>：需要 2 张卡还是 20 张卡，月成本是 1 万还是 30 万。数量级错了，架构选型就错了；数量级对了，剩下的用压测和灰度去修正。<b>所以本章给的是方法与假设，不是数字。</b></p>
+
+  <h3>第一步：流量画像——没有它，后面全是空想</h3>
+  <p>容量规划最常见的失败不是算错，而是<b>输入就是拍脑袋来的</b>。开始计算前，你需要五个数，且它们必须来自真实观测或有依据的估计：</p>
+
+  <div class="tbl-scroll">
+  <table>
+    <thead><tr><th>量</th><th>为什么需要它</th><th>常见错误</th></tr></thead>
+    <tbody>
+      <tr><td><b>峰值 QPS</b></td><td>容量按峰值配，不按均值</td><td>用日均 QPS 规划，结果每天高峰期挂</td></tr>
+      <tr><td><b>输入长度分布</b>（P50 / P95）</td><td>决定 prefill 成本与 KV cache 占用</td><td>只取均值，忽略长尾把显存吃穿</td></tr>
+      <tr><td><b>输出长度分布</b>（均值 / P95）</td><td>decode 时间与 token 成本的主要来源</td><td>假设输出很短，实际模型话很多</td></tr>
+      <tr><td><b>峰谷比</b></td><td>决定弹性策略与资源浪费程度</td><td>忽略它，按峰值常驻，夜间烧钱</td></tr>
+      <tr><td><b>可缓存前缀占比</b></td><td>直接抵扣 prefill 成本（<a href="2-2-prompt-caching.html">2.2</a>）</td><td>算成本时完全没算缓存</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <p>如果这五个数你一个都没有，那么容量规划的第一项工作不是计算，而是<b>去把它们量出来</b>——哪怕先上一个小规格的实例接真实流量跑一周。</p>
+
+  <h3>第二步：两个独立的约束，取更紧的那个</h3>
+  <p>自托管的容量由两个<b>互相独立</b>的瓶颈决定。很多人只算其中一个，于是要么买多了，要么上线就 OOM。</p>
+
+  <div class="formula"><b>约束 A · 算力/吞吐约束</b><br>需要的 GPU 数 = 峰值输出 token 速率 ÷ 单卡实测输出 token 速率<br>其中：峰值输出 token 速率 = 峰值 QPS × 平均输出 token 数<br><br><b>约束 B · 显存/并发约束</b><br>单卡可并发数 = (显存 − 权重 − 运行时开销) ÷ (per-token KV × 平均总序列长度)<br>需要的并发数 = 峰值 QPS × 平均请求时长　<span class="mn">（Little's Law）</span><br>需要的 GPU 数 = 需要的并发数 ÷ 单卡可并发数<br><br><b>取两者的最大值，再除以目标利用率。</b></div>
+
+  <p>其中 <span class="term">Little's Law</span>（利特尔法则）是排队论里的经典结论：稳态系统中，<b>平均在途请求数 = 到达率 × 平均停留时间</b>。它在这里的作用是把「每秒来多少请求」翻译成「同时有多少请求驻留在显存里」——而后者才是 KV cache 要承受的东西。</p>
+
+  <figure>
+    <svg viewBox="0 0 760 300" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="容量估算的两条约束路径">
+      <text x="20" y="24" class="lbl">同一份流量画像，两条独立的推导路径</text>
+
+      <rect x="270" y="38" width="220" height="36" rx="6" fill="var(--free)"/>
+      <text x="380" y="61" text-anchor="middle" class="mn">流量画像：QPS / 长度分布</text>
+
+      <path d="M330 78 L200 108" stroke="var(--ink-soft)" stroke-width="2"/>
+      <path d="M430 78 L560 108" stroke="var(--ink-soft)" stroke-width="2"/>
+
+      <!-- A -->
+      <rect x="40" y="112" width="300" height="36" rx="6" fill="var(--alloc)"/>
+      <text x="190" y="135" text-anchor="middle" class="onfill">A · 算力约束</text>
+      <rect x="40" y="156" width="300" height="32" rx="5" fill="var(--alloc-soft)" stroke="var(--alloc)"/>
+      <text x="190" y="177" text-anchor="middle" class="mn">峰值 QPS × 平均输出长度</text>
+      <rect x="40" y="194" width="300" height="32" rx="5" fill="var(--alloc-soft)" stroke="var(--alloc)"/>
+      <text x="190" y="215" text-anchor="middle" class="mn">÷ 单卡实测 token/s</text>
+
+      <!-- B -->
+      <rect x="420" y="112" width="300" height="36" rx="6" fill="var(--waste)"/>
+      <text x="570" y="135" text-anchor="middle" class="onfill">B · 显存约束</text>
+      <rect x="420" y="156" width="300" height="32" rx="5" fill="var(--waste-soft)" stroke="var(--waste)"/>
+      <text x="570" y="177" text-anchor="middle" class="mn">QPS × 平均时长 = 并发数</text>
+      <rect x="420" y="194" width="300" height="32" rx="5" fill="var(--waste-soft)" stroke="var(--waste)"/>
+      <text x="570" y="215" text-anchor="middle" class="mn">÷ 单卡 KV 能装的并发数</text>
+
+      <path d="M190 232 L340 258" stroke="var(--ink-soft)" stroke-width="2"/>
+      <path d="M570 232 L420 258" stroke="var(--ink-soft)" stroke-width="2"/>
+      <rect x="250" y="262" width="260" height="34" rx="6" fill="var(--head-bg)"/>
+      <text x="380" y="284" text-anchor="middle" class="onfill">取 max，再 ÷ 目标利用率</text>
+    </svg>
+    <figcaption><b>图 1 · 两条约束路径。</b>哪条更紧取决于负载形态：<b>短输入长输出</b>（如创作类）通常算力受限；<b>长输入短输出</b>（如文档问答、RAG）几乎总是显存受限。搞错方向会导致「加卡也不解决问题」。</figcaption>
+  </figure>
+
+  <h3>第三步：三个必须留的余量</h3>
+  <p>算出来的数字是<b>理论下限</b>，直接照它买卡必然出事。三处余量缺一不可：</p>
+
+  <p><b>① 利用率余量。</b>系统不能跑在 100% 利用率上——排队延迟会在接近饱和时非线性爆炸（<a href="2-1-latency-metrics.html">2.1</a> 的拐点）。生产系统通常把目标利用率设在 60–75%，即实际容量要按理论值再除以 0.6–0.75。</p>
+
+  <p><b>② 故障余量。</b>N 张卡的集群要能在挂掉 1 张时仍然扛住峰值，即按 N+1 配置。跨可用区部署时余量还要更多。</p>
+
+  <p><b>③ 增长余量。</b>扩容不是即时的——采购、配额审批、模型加载都需要时间。按未来 1–2 个季度的预期增长预留。</p>
+
+  <h3>API 还是自托管：一个盈亏平衡问题</h3>
+  <p>这个决策通常被情绪化地讨论（「自己搭更便宜」/「API 更省心」），但它本质上是一道算术题加三个非成本因素。</p>
+
+  <div class="formula"><b>盈亏平衡点</b>（自行推导）<br><br>API 月成本 = 月 token 量 × 单价　<span class="mn">（随用量线性增长）</span><br>自托管月成本 = GPU 台数 × 单价 + 人力 + 运维　<span class="mn">（阶梯式固定成本）</span><br><br>→ <b>低用量时 API 稳赢；用量越过某个点后自托管的边际成本优势显现</b><br>→ 关键变量是<b>利用率</b>：自托管的卡闲着也要付钱，<br>　 峰谷比越大，自托管的实际单位成本越高</div>
+
+  <p><b>峰谷比是最常被忽略的变量。</b>一个白天峰值 100 QPS、夜间近乎为零的服务，若按峰值配置常驻 GPU，实际平均利用率可能只有 20%——这意味着你的真实单位成本是理论值的 5 倍，盈亏平衡点也随之推后 5 倍。API 的按量付费天然免疫这个问题，这往往比单价对比更重要。</p>
+
+  <p>另外三个不进成本表但同样决定性的因素：<b>数据合规</b>（数据能不能出境、能不能给第三方）、<b>延迟确定性</b>（自托管可控，API 受他人容量波动影响）、<b>模型能力</b>（前沿能力通常只有 API 才有）。<b>如果合规要求就是不允许调外部 API，那么这道算术题根本不需要做。</b></p>
+</section>
+
+<!-- ================= 案例 ================= -->
+<section id="case">
+  <div class="sec-tag"><span class="cell" style="background:var(--waste)"></span><span class="lab">Case Study 案例推演</span></div>
+  <h2>一次完整的容量推演（匿名化）</h2>
+
+  <div class="case">
+    <div class="case-head"><span class="cell"></span>内部知识库问答服务 · 从流量画像到卡数</div>
+    <div class="case-body">
+      <p><b>场景</b>：企业内部文档问答，接入 RAG。观测到的流量画像如下——注意这五个数是<b>量出来的</b>，不是估的。</p>
+      <div class="stats">
+        <div class="stat"><div class="n">18</div><div class="l">峰值 QPS（工作日 10–11 点）</div></div>
+        <div class="stat"><div class="n">3.2K</div><div class="l">输入 token P50（含检索到的文档）</div></div>
+        <div class="stat"><div class="n">280</div><div class="l">输出 token 均值</div></div>
+        <div class="stat"><div class="n bad">9:1</div><div class="l">峰谷比（夜间几乎无流量）</div></div>
+      </div>
+
+      <p><b>候选模型</b>：13B 级别开源模型，INT4 量化后权重约 7.5 GB；40 层、hidden 5120，KV cache 按 FP16 计算 per-token ≈ 800 KB（推导见 <a href="1-2-kv-cache.html">1.2</a>）。硬件按单卡 24 GB 显存计。</p>
+
+      <p><b>约束 A · 算力</b>：峰值输出速率 = 18 × 280 ≈ <b>5,040 token/s</b>。假设压测实测单卡在目标 TPOT 约束下能稳定输出 <b>1,400 token/s</b>（<span class="mn">此数必须实测，不可照搬</span>），则需要 5040 / 1400 ≈ <b>3.6 张卡</b>。</p>
+
+      <p><b>约束 B · 显存</b>：单请求平均总序列长度 ≈ 3200 + 280 ≈ 3,480 token，每条请求 KV ≈ 3480 × 800 KB ≈ <b>2.7 GB</b>。单卡可用于 KV 的显存 ≈ 24 − 7.5（权重）− 2（激活与框架开销）≈ <b>14.5 GB</b>，即单卡可并发 14.5 / 2.7 ≈ <b>5.4 条</b>。<br>再用 Little's Law 求需要的并发：平均请求时长 ≈ TTFT 0.6s + 280 × TPOT 0.04s ≈ <b>11.8 s</b>，所需并发 = 18 × 11.8 ≈ <b>212 条</b>。<br>因此需要 212 / 5.4 ≈ <b>39 张卡</b>。</p>
+
+      <p><b>两个数字差了十倍，显存约束是绝对的瓶颈。</b>这正是长输入短输出型负载的典型特征——如果只算了约束 A 就去买 4 张卡，上线当天就会因为并发上不去而大面积超时，而 GPU 利用率看起来还很低，排查方向极易走偏。</p>
+
+      <p><b>优化顺序应该由瓶颈决定</b>，这是本案例最重要的结论。既然瓶颈是 KV 显存，那么有效的手段依次是：<b>① KV cache 量化</b>（per-token 减半 → 并发翻倍 → 卡数近乎减半）；<b>② 缩短输入</b>——检索从 5 篇文档减到 3 篇，输入降到约 2K，KV 占用降约 40%；<b>③ prefix caching</b>——RAG 场景中 system prompt 与工具定义可稳定命中（<a href="2-2-prompt-caching.html">2.2</a>），降低 prefill 压力；<b>④ 更大显存的卡</b>。而「换更快的 GPU」几乎没用——瓶颈不在算力。</p>
+
+      <p>做完 ① 和 ②：per-token KV 减半、序列长度降至约 2,280，单请求 KV ≈ 0.9 GB，单卡可并发约 16 条，需要 212 / 16 ≈ <b>14 张卡</b>。按目标利用率 70% 与 N+1 故障余量，最终规格约 <b>14/0.7 + 1 ≈ 21 张卡</b>。</p>
+
+      <p><b>最后一步：回头质疑自托管本身。</b>峰谷比 9:1 意味着这 21 张卡在夜间几乎全部闲置，实际平均利用率很低——自托管的真实单位成本远高于按峰值算出来的账面值。此时应认真评估三条路：按需弹性伸缩、峰谷混部（夜间跑离线批任务）、或高峰期溢出到 API。<b>容量规划的终点不总是「买多少卡」，也可能是「不要自己扛这个峰」。</b></p>
+      <div class="src">说明：本案例为综合多个真实项目的<b>匿名化推演</b>，不含任何可识别的公司或个人信息。全部数字均为便于演算而设定的示例假设，计算方法已全部写出——请代入你自己实测的画像与单卡吞吐重算，切勿直接引用本文数字。</div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 工具层 ================= -->
+<section id="tools">
+  <div class="sec-tag"><span class="cell" style="background:var(--free)"></span><span class="lab">Tooling Sidebar 工具层</span></div>
+  <div class="toolbox">
+    <div class="toolbox-head">
+      <span class="t">怎么把这些数量出来（会过期，正文不依赖本区块）</span>
+      <span class="date">截至 2026-08</span>
+    </div>
+    <div class="toolbox-body">
+      <p><b>单卡吞吐必须实测</b>：厂商标称与论文数字都不能直接用于容量规划。用 <code>vllm bench serve</code> 一类的压测工具，输入<b>你自己的长度分布</b>，在目标 TTFT/TPOT 约束下找出单卡的 goodput——这个数是全部推导的地基。</p>
+      <p><b>显存占用要实量</b>：权重、KV cache、激活、框架开销之外，还有 CUDA context、通信缓冲等零碎开销。实际做法是把 <code>--gpu-memory-utilization</code> 设到目标值后启动，观察框架自己报告的 KV cache 块数，反推真实可用容量。</p>
+      <p><b>弹性伸缩的现实约束</b>：GPU 实例的冷启动（调度 + 拉镜像 + 加载权重）通常是分钟级，远慢于普通无状态服务。这意味着<b>基于实时负载的自动扩容往往来不及应对突发</b>；更可行的是按可预测的时间规律做定时伸缩，再叠加一层 API 溢出兜底。</p>
+      <p><b>成本核算别漏项</b>：除 GPU 本身，还有存储、跨可用区流量、镜像仓库、监控与日志、以及最容易被低估的<b>工程师时间</b>。自托管方案的隐性成本主要在最后一项。</p>
+      <p><b>价格属于工具层</b>：本书不给任何具体价格。做决策时以你实际能拿到的报价（含承诺用量折扣、预留实例、竞价实例）为准，并注意这些价格的变化速度远快于本书的更新速度。</p>
+    </div>
+  </div>
+</section>
+
+<!-- ================= Quiz ================= -->
+<section id="quiz">
+  <div class="sec-tag"><span class="cell"></span><span class="lab">Quiz 自测</span></div>
+  <h2>章末自测</h2>
+  <div class="quiz">
+
+    <details>
+      <summary><span class="qtype">决策题</span>产品要上线一个代码助手：峰值 40 QPS，输入 P50 约 6K token（含代码上下文），输出均值 150 token，SLA 要求 TTFT P95 &lt; 1.5s。给出部署方案与月成本估算的推导过程。</summary>
+      <div class="answer">
+        <p><b>第一步：判断瓶颈方向。</b>长输入（6K）+ 短输出（150）——典型的<b>显存受限</b>型负载，且 prefill 压力极大。先做这个判断，可以避免把精力花在错误的优化上。</p>
+        <p><b>第二步：算约束 A（算力）。</b>峰值输出速率 = 40 × 150 = <b>6,000 token/s</b>。假设实测单卡 1,500 token/s，则需 <b>4 张卡</b>。</p>
+        <p><b>第三步：算约束 B（显存）。</b>平均请求时长 ≈ TTFT 1.0s + 150 × 0.04s = <b>7.0s</b>；由 Little's Law，所需并发 = 40 × 7 = <b>280 条</b>。设单请求序列长度约 6,150 token、per-token KV 800 KB，则单请求 KV ≈ <b>4.9 GB</b>——单张 24GB 卡扣掉权重后只能放 <b>2–3 条</b>。需要 280 / 3 ≈ <b>93 张卡</b>。</p>
+        <p><b>结论：显存瓶颈严重到方案不成立。</b>93 张卡的成本几乎肯定无法接受。这时正确的反应不是去砍 SLA，而是<b>回头质疑输入长度</b>。</p>
+        <p><b>第四步：攻击真正的瓶颈——6K 输入。</b>① <b>prompt caching</b>：代码助手场景中同一文件/同一仓库上下文会被反复使用，前缀命中率可以很高，直接砍掉大部分 prefill 成本，TTFT 也随之改善；② <b>只送必要的上下文</b>——用检索而非全量文件塞入，输入若能降到 2K，单请求 KV 降到约 1.6 GB，单卡并发升到约 9 条，卡数降到 280/9 ≈ <b>31 张</b>；③ <b>KV cache 量化</b>：再翻倍到约 18 条，卡数降至 <b>16 张</b>；④ <b>更大显存的卡</b>：80GB 卡可用 KV 空间约为 24GB 卡的 5 倍以上，卡数可进一步下降且运维更简单。</p>
+        <p><b>第五步：SLA 校验。</b>TTFT P95 &lt; 1.5s 在 6K 输入下本就吃力（prefill 计算量约 O(n²)）；缩短输入同时解决了显存和 TTFT 两个问题——<b>这说明输入长度是这个系统真正的核心变量</b>。</p>
+        <p><b>第六步：成本对比。</b>把优化后的卡数×单价，与「40 QPS × 平均 6K 输入 token（缓存后按折扣计）× 单价」的 API 方案对比，同时计入峰谷比对自托管利用率的稀释。代码助手通常有明显的工作时段峰谷，这一项对结论影响很大。</p>
+        <p><b>标准答案的形态</b>：不是一个卡数，而是<b>「瓶颈是什么 → 优化顺序 → 每步的量化收益 → 两种方案的盈亏平衡点」</b>这条链条。</p>
+      </div>
+    </details>
+
+    <details>
+      <summary><span class="qtype">估算题</span>某服务并发 60 条请求，平均序列长度 4K，模型 32 层、hidden 4096、FP16 服务。KV cache 需要多少显存？若要在单张 80GB 卡上跑，还剩多少给权重？</summary>
+      <div class="answer">
+        <p><b>per-token KV</b> = 2 × 32 × 4096 × 2 bytes = 524,288 B ≈ <b>512 KB</b>（推导见 <a href="1-2-kv-cache.html">1.2</a>）。</p>
+        <p><b>单请求</b> = 4096 × 512 KB ≈ <b>2 GB</b>。<b>60 条并发</b> = <b>120 GB</b>。</p>
+        <p><b>结论：单张 80GB 卡根本装不下，光 KV cache 就超了 50%。</b></p>
+        <p><b>三条出路</b>：① <b>KV cache 量化到 INT8</b> → 60 GB，加上权重仍然紧张，但配合更激进的量化可行；② <b>降低并发到约 30 条</b> → 60 GB KV + 权重，勉强可行，但吞吐减半；③ <b>用 GQA 模型</b>——若 KV head 数是 query head 的 1/4，per-token KV 直接降到 128 KB，60 条并发只需 30 GB，问题迎刃而解。</p>
+        <p><b>这道题真正想让你记住的</b>：<b>模型选型阶段的架构决策（是否 GQA、层数、hidden 大小）对容量的影响，远大于上线后的任何调参。</b>容量规划应该前移到选型环节，而不是等部署时才发现装不下。</p>
+      </div>
+    </details>
+
+    <details>
+      <summary><span class="qtype">概念题</span>为什么容量要按峰值 QPS 规划，而成本要按平均 QPS 估算？两者不一致会导致什么？</summary>
+      <div class="answer">
+        <p><b>容量按峰值</b>：系统必须在最忙的时刻仍满足 SLA，否则高峰期就是事故。按均值配置的系统，每天都会在高峰准时崩溃。</p>
+        <p><b>成本按平均</b>：账单取决于实际消耗的总量。API 按量计费，直接对应平均用量。</p>
+        <p><b>不一致的后果</b>：自托管时，<b>你按峰值买卡，却按平均产生价值</b>——两者的比值就是峰谷比。峰谷比 9:1 意味着平均利用率约 11%，真实单位成本是理论值的近 9 倍。很多「自建比 API 便宜」的测算，正是错在用峰值利用率去算单位成本。</p>
+        <p><b>正确做法</b>：自托管的单位成本 = 月 GPU 总费用 ÷ 月实际处理 token 数，<b>分母用平均、分子用峰值配置</b>。用这个口径再和 API 单价比，结论常常会反转。</p>
+      </div>
+    </details>
+
+    <details>
+      <summary><span class="qtype">面试题改编</span>「设计一个支撑 1000 万日活的 AI 助手，需要多少 GPU？」</summary>
+      <div class="answer">
+        <p>面试官想看的是<b>你会不会先问问题</b>。直接开始算的候选人已经答错了——1000 万 DAU 这个数字本身几乎不含容量信息。</p>
+        <p><b>必须先问清的五件事</b>：① <b>人均调用次数</b>——每人每天 1 次还是 50 次，差 50 倍；② <b>输入/输出长度分布</b>——决定瓶颈是算力还是显存；③ <b>峰值集中度</b>——全球分布的用户峰谷比小，单一时区的服务峰值可能是均值的 5–10 倍；④ <b>SLA</b>——TTFT 要求决定了能跑多大 batch；⑤ <b>模型规格与是否可用 API</b>。</p>
+        <p><b>然后给出推导框架</b>（而不是一个数字）：日调用量 → 峰值 QPS（用峰谷比换算） → 分别算算力约束与显存约束 → 取更紧者 → 除以目标利用率 → 加故障与增长余量。</p>
+        <p><b>加分项</b>：主动指出优化手段会显著改变结论——prompt caching 命中率、模型路由分流比例、KV cache 量化，每一项都可能让卡数减半；以及主动质疑「是否全部自托管」，提出峰值溢出到 API 的混合方案。</p>
+        <p><b>减分项</b>：给出一个精确到个位的数字。容量估算的正确输出是<b>一个带假设的区间</b>，以及「哪个假设变化会最剧烈地改变结论」的敏感性说明。</p>
+      </div>
+    </details>
+
+  </div>
 </section>
 
 <nav class="next">
   <a href="2-3-model-routing.html">← 2.3 模型分级与路由</a>
-  <a href="3-1-why-rag.html">3.1 参数化知识与非参数化知识 →</a>
+  <a href="3-1-why-rag.html">3.1 为什么需要 RAG →</a>
 </nav>
 
 </div>

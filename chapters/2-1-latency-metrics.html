@@ -3,7 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>2.1 延迟指标体系：TTFT / TPOT / E2E · AI 系统工程手册</title>
+<title>2.1 延迟指标体系 · AI 系统工程手册</title>
+<meta name="description" content="TTFT / TPOT / E2E latency，以及 latency 与 throughput 的根本取舍。">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Noto+Sans+SC:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -20,23 +21,227 @@
 
 <header class="ch">
   <div class="blockrow" aria-hidden="true">
+    <span></span><span></span><span></span><span class="w"></span><span class="w"></span>
     <span></span><span></span><span class="f"></span><span class="f"></span><span class="f"></span>
-    <span class="f"></span><span class="f"></span><span class="f"></span><span class="f"></span><span class="f"></span>
   </div>
   <div class="kicker">Part 2 · Serving &amp; Cost 服务与成本</div>
   <h1>2.1 Latency Metrics
-    <span class="zh">延迟指标体系：TTFT / TPOT / E2E</span>
+    <span class="zh">延迟指标体系：先量对，再优化</span>
   </h1>
+  <div class="meta">
+    <span>难度 <b>★★☆</b></span>
+    <span>阅读 <b>~14 min</b></span>
+    <span>面试出现频率 <b>高</b></span>
+    <span>前置 <b>1.3 Continuous Batching</b></span>
+  </div>
 </header>
 
+<!-- ================= 核心概念 ================= -->
 <section id="concept">
-  <div class="sec-tag"><span class="cell" style="background:var(--free)"></span><span class="lab">Draft 待撰写</span></div>
-  <p>本章尚未撰写。返回<a href="../index.html">全书目录</a>。</p>
+  <div class="sec-tag"><span class="cell"></span><span class="lab">Core Concept 核心概念</span></div>
+  <h2>「延迟」这个词在 LLM 服务里没有意义</h2>
+
+  <p>传统 Web 服务的延迟是一个数：请求进去，响应出来，中间的时间。LLM 服务不是——它<b>流式地</b>产出结果，用户在第一个字出现时就已经开始体验了。把整个过程压成一个「响应时间」，会同时掩盖两类完全不同的问题，并且指向完全相反的优化手段。</p>
+
+  <p>所以必须拆成三个指标，它们对应推理的两个阶段（见 <a href="1-1-tokenization.html">1.1</a>）：</p>
+
+  <div class="tbl-scroll">
+  <table>
+    <thead><tr><th>指标</th><th>含义</th><th>由什么决定</th><th>用户感受</th></tr></thead>
+    <tbody>
+      <tr><td><b>TTFT</b><br><span class="term">time to first token</span></td><td>从发出请求到收到第一个 token</td><td>prefill 阶段：输入长度（计算量约 O(n²)）、排队时间、缓存命中</td><td>「它反应快不快」<br>——等待感的全部来源</td></tr>
+      <tr><td><b>TPOT</b><br><span class="term">time per output token</span></td><td>后续每个 token 的平均间隔<br>（也称 ITL，inter-token latency）</td><td>decode 阶段：模型大小、显存带宽、batch 大小</td><td>「它打字快不快」<br>——流畅度</td></tr>
+      <tr><td><b>E2E latency</b></td><td>整个请求的总时长</td><td>≈ TTFT + TPOT × (输出 token 数 − 1)</td><td>只有非流式场景才直接可感</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <p>这个分解的实用价值在于：<b>它把「慢」这个模糊抱怨翻译成了可定位的工程问题</b>。用户说「慢」，如果是 TTFT 高，你该去看输入长度、排队和缓存；如果是 TPOT 高，你该去看模型大小、batch 配置和硬件带宽——两条路毫无交集，走错方向就是几周的浪费。</p>
+
+  <figure>
+    <svg viewBox="0 0 760 220" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="TTFT 与 TPOT 在请求生命周期中的位置">
+      <text x="20" y="24" class="lbl">一次流式请求的时间构成</text>
+
+      <line x1="20" y1="120" x2="740" y2="120" stroke="var(--line)" stroke-width="2"/>
+
+      <!-- queue -->
+      <rect x="20" y="86" width="90" height="30" rx="4" fill="var(--free)"/>
+      <text x="65" y="106" text-anchor="middle" class="mn">排队</text>
+      <!-- prefill -->
+      <rect x="112" y="86" width="170" height="30" rx="4" fill="var(--waste)"/>
+      <text x="197" y="106" text-anchor="middle" class="onfill">prefill 预填充</text>
+      <!-- decode tokens -->
+      <g>
+        <rect x="284" y="86" width="52" height="30" rx="4" fill="var(--alloc)"/><text x="310" y="106" text-anchor="middle" class="onfill">tok1</text>
+        <rect x="338" y="86" width="52" height="30" rx="4" fill="var(--alloc)"/><text x="364" y="106" text-anchor="middle" class="onfill">tok2</text>
+        <rect x="392" y="86" width="52" height="30" rx="4" fill="var(--alloc)"/><text x="418" y="106" text-anchor="middle" class="onfill">tok3</text>
+        <rect x="446" y="86" width="52" height="30" rx="4" fill="var(--alloc)"/><text x="472" y="106" text-anchor="middle" class="onfill">tok4</text>
+        <rect x="500" y="86" width="52" height="30" rx="4" fill="var(--alloc)"/><text x="526" y="106" text-anchor="middle" class="onfill">…</text>
+        <rect x="554" y="86" width="52" height="30" rx="4" fill="var(--alloc)"/><text x="580" y="106" text-anchor="middle" class="onfill">tokN</text>
+      </g>
+
+      <!-- TTFT bracket -->
+      <line x1="20" y1="66" x2="336" y2="66" stroke="var(--waste)" stroke-width="2"/>
+      <line x1="20" y1="60" x2="20" y2="72" stroke="var(--waste)" stroke-width="2"/>
+      <line x1="336" y1="60" x2="336" y2="72" stroke="var(--waste)" stroke-width="2"/>
+      <text x="178" y="54" text-anchor="middle" class="mn" fill="var(--waste)">TTFT — 用户盯着空白屏幕的时间</text>
+
+      <!-- TPOT bracket -->
+      <line x1="338" y1="146" x2="390" y2="146" stroke="var(--alloc)" stroke-width="2"/>
+      <line x1="338" y1="140" x2="338" y2="152" stroke="var(--alloc)" stroke-width="2"/>
+      <line x1="390" y1="140" x2="390" y2="152" stroke="var(--alloc)" stroke-width="2"/>
+      <text x="400" y="151" class="mn" fill="var(--alloc)">TPOT — 每个后续 token 的间隔</text>
+
+      <!-- E2E -->
+      <line x1="20" y1="184" x2="606" y2="184" stroke="var(--ink-soft)" stroke-width="2" stroke-dasharray="5 4"/>
+      <text x="313" y="204" text-anchor="middle" class="sub">E2E latency ≈ TTFT + TPOT × (N − 1)</text>
+    </svg>
+    <figcaption><b>图 1 · 三个指标的关系。</b>注意排队时间被算进 TTFT——在高负载下，<b>TTFT 的恶化往往来自排队而非计算</b>，这一点在只测单请求延迟的压测里完全看不见。</figcaption>
+  </figure>
+
+  <h3>指标要配 SLA，SLA 要配场景</h3>
+  <p>不同产品形态对三个指标的敏感度差异极大，用同一套阈值管理所有服务是常见的错误：</p>
+
+  <p><b>流式对话</b>：TTFT 决定「有没有反应」，是第一优先级；TPOT 只需<b>快过用户的阅读速度</b>即可，再快用户也感知不到——这是一条重要的止损线，说明 TPOT 的优化存在收益归零点。举例：若目标是每秒吐 20 个 token，TPOT 只需 ≤ 50ms，做到 20ms 并不会让体验更好，但可能让你的 batch 配置付出吞吐代价。</p>
+
+  <p><b>语音对话</b>：TTFT 的要求严苛得多，因为人类对话中的沉默极难忍受；这类场景常常值得为压低 TTFT 牺牲相当多的吞吐。</p>
+
+  <p><b>离线批处理</b>：TTFT 和 TPOT 都无所谓，唯一指标是<b>吞吐</b>（以及由此决定的成本）。此时应该把 batch 开到显存允许的上限。</p>
+
+  <p><b>Agent 内部调用</b>：单步的 TTFT 会被<b>乘以循环轮数</b>放大（见 <a href="4-2-planning-loop.html">4.2</a>）。一个 8 轮的 agent，每轮多 300ms，用户就多等 2.4 秒——所以 agent 场景对 TTFT 的敏感度远高于它看起来的样子。</p>
+
+  <h3>根本取舍：延迟与吞吐不可兼得</h3>
+  <p>这是 Part 2 全部内容的地基。增大 batch 会摊薄权重读取成本，<b>吞吐上升</b>；但批内每一步要处理的数据更多，且每条请求都要等整批一起走完这一步，<b>单请求延迟上升</b>。反过来，batch=1 延迟最优，但 GPU 大部分算力在空转，成本高到不可接受。</p>
+
+  <figure>
+    <svg viewBox="0 0 760 260" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="吞吐与延迟随 batch size 变化的取舍曲线">
+      <line x1="70" y1="210" x2="700" y2="210" stroke="var(--line)" stroke-width="2"/>
+      <line x1="70" y1="210" x2="70" y2="30" stroke="var(--line)" stroke-width="2"/>
+      <text x="560" y="234" class="sub">batch size / 并发 →</text>
+
+      <!-- throughput curve: rises then flattens -->
+      <path d="M70 200 Q 260 90 430 70 T 700 58" fill="none" stroke="var(--alloc)" stroke-width="3"/>
+      <text x="470" y="50" class="mn" fill="var(--alloc)">吞吐 throughput（趋于饱和）</text>
+
+      <!-- latency curve: flat then rises -->
+      <path d="M70 190 Q 300 178 430 150 T 700 40" fill="none" stroke="var(--waste)" stroke-width="3"/>
+      <text x="520" y="115" class="mn" fill="var(--waste)">单请求延迟 latency（加速上升）</text>
+
+      <!-- knee -->
+      <line x1="430" y1="30" x2="430" y2="210" stroke="var(--ink-soft)" stroke-width="2" stroke-dasharray="5 4"/>
+      <text x="438" y="196" class="mn">拐点：吞吐已近饱和，</text>
+      <text x="438" y="212" class="mn">继续加 batch 只换来延迟恶化</text>
+
+      <rect x="70" y="30" width="360" height="180" fill="var(--alloc-soft)" opacity="0.35"/>
+      <text x="120" y="252" class="sub">← 有效工作区：吞吐还在涨</text>
+      <text x="470" y="252" class="sub">无效区：只涨延迟 →</text>
+    </svg>
+    <figcaption><b>图 2 · 取舍曲线与拐点。</b>示意图，非实测数据——真实拐点位置取决于模型、硬件与请求长度分布，<b>必须自己压测得到</b>。但结构是普适的：吞吐有饱和上限，延迟没有。工程上的任务是<b>找到那个拐点，并让系统运行在它左侧</b>。</figcaption>
+  </figure>
+
+  <p>还有一个更隐蔽的取舍在 batch <b>内部</b>：新请求的 prefill 与在途请求的 decode 争抢同一次迭代（<a href="1-3-continuous-batching.html">1.3</a> 已提到）。优先 prefill，新用户的 TTFT 好看、老用户的 TPOT 卡顿；优先 decode 则相反。<b>TTFT 与 TPOT 在调度层面直接互为代价</b>——这正是下面案例要解决的问题。</p>
+
+  <div class="callout">
+    <p><b>用 goodput 而不是 throughput 做决策。</b>「每秒 5000 token」听起来很好，但如果其中一半请求的 TTFT 已超出 SLA，这些吞吐是无效的。<span class="term">goodput</span>（有效吞吐）= 单位时间内<b>满足 SLA 的</b>请求数。用它做容量决策，可以避免「指标很好但用户在骂」的经典困境。</p>
+  </div>
+</section>
+
+<!-- ================= 案例 ================= -->
+<section id="case">
+  <div class="sec-tag"><span class="cell" style="background:var(--waste)"></span><span class="lab">Case Study 真实案例</span></div>
+  <h2>Sarathi-Serve：不牺牲延迟地提高吞吐</h2>
+
+  <div class="case">
+    <div class="case-head"><span class="cell"></span>Taming Throughput-Latency Tradeoff in LLM Inference (OSDI 2024)</div>
+    <div class="case-body">
+      <p>Georgia Tech 与 Microsoft Research India 的团队直指上文那个调度冲突：要提高吞吐就得增大 batch，但新请求的 prefill 一旦入批就会<b>停住</b>（stall）正在进行的 decode，导致 TPOT 抖动。</p>
+      <p>他们的方案是 <b>chunked-prefill + stall-free scheduling</b>：把一个 prefill 请求切成大小接近的若干块，每次迭代只处理一块，并与在途的 decode 拼在同一批里执行——<b>新请求可以加入批次而不暂停任何正在进行的解码</b>。这样既拿到了大 batch 的吞吐，又不让 TPOT 出现尖刺。</p>
+      <div class="stats">
+        <div class="stat"><div class="n good">2.6×</div><div class="l">Mistral-7B / 单张 A100，服务容量提升（vs vLLM）</div></div>
+        <div class="stat"><div class="n good">3.7×</div><div class="l">Yi-34B / 两张 A100，最高提升</div></div>
+        <div class="stat"><div class="n good">5.6×</div><div class="l">Falcon-180B + 流水线并行，端到端服务容量最高提升</div></div>
+      </div>
+      <p><b>条件</b>：三组数字分别对应不同模型与硬件配置，基线均为 vLLM，衡量的是<b>在满足延迟约束前提下的服务容量</b>——这正是上文 goodput 的思路，而不是裸吞吐。</p>
+      <p>这个案例的方法论价值大于数字本身：<b>当你面对一个「A 和 B 不可兼得」的取舍时，先别急着在曲线上选点，去检查这条曲线是不是可以被整体推动。</b>此处的关键洞察是——prefill 之所以阻塞 decode，是因为它被当成一个不可分割的原子操作；一旦允许它被切分，冲突的前提就消失了。</p>
+      <div class="src">来源：Agrawal, Kedia, Panwar, Mohan, Kwatra, Gulavani, Tumanov, Ramjee, "Taming Throughput-Latency Tradeoff in LLM Inference with Sarathi-Serve", USENIX OSDI 2024. 数字引自论文；示意图为本书重绘。</div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 工具层 ================= -->
+<section id="tools">
+  <div class="sec-tag"><span class="cell" style="background:var(--free)"></span><span class="lab">Tooling Sidebar 工具层</span></div>
+  <div class="toolbox">
+    <div class="toolbox-head">
+      <span class="t">怎么把这些指标真的量出来（会过期，正文不依赖本区块）</span>
+      <span class="date">截至 2026-08</span>
+    </div>
+    <div class="toolbox-body">
+      <p><b>压测工具</b>：vLLM 自带 <code>benchmark_serving.py</code>，可指定请求到达率与数据集，直接输出 TTFT / TPOT / E2E 的分位数；<code>llmperf</code>、<code>genai-perf</code> 等第三方工具提供类似能力。关键是<b>选一个能报分位数而不只报均值的工具</b>。</p>
+      <p><b>务必用真实长度分布</b>：用等长请求压测会系统性地高估性能——连续批处理与分页的收益、prefill 阻塞的代价，全都取决于长度方差。把线上真实的输入/输出长度分布采样出来做压测输入。</p>
+      <p><b>务必测排队</b>：单并发下测出的 TTFT 只包含计算时间。把并发压到目标负载的 1×、1.5×、2× 分别测，观察 TTFT 的 P99 在哪个点开始非线性上升——那就是你的容量拐点（<a href="2-4-capacity-planning.html">2.4</a> 会用到这个数）。</p>
+      <p><b>线上监控口径</b>：TTFT、TPOT 至少各留 P50/P95/P99，并<b>按输入长度分桶</b>（如 &lt;1K、1–8K、&gt;8K）。不分桶的话，长请求的正常慢会污染整体分位数，掩盖真正的异常。</p>
+      <p><b>商业 API 场景</b>：你无法控制对方的 batch 配置，但同样要测——把 TTFT/TPOT 作为供应商的 SLA 监控项，它们的波动是 <a href="6-5-degradation-fallback.html">6.5 降级策略</a>的触发信号。</p>
+    </div>
+  </div>
+</section>
+
+<!-- ================= Quiz ================= -->
+<section id="quiz">
+  <div class="sec-tag"><span class="cell"></span><span class="lab">Quiz 自测</span></div>
+  <h2>章末自测</h2>
+  <div class="quiz">
+
+    <details>
+      <summary><span class="qtype">估算题</span>一个流式问答服务：TTFT P95 = 800ms，TPOT P95 = 40ms，平均输出 500 token。用户的 E2E 体感是多久？如果把模型换成一个小一半、TPOT 降到 25ms 但 TTFT 升到 1.1s 的方案，值得吗？</summary>
+      <div class="answer">
+        <p><b>当前</b>：E2E ≈ 0.8 + 0.04 × 499 ≈ 0.8 + 20.0 ≈ <b>20.8 秒</b>。</p>
+        <p><b>新方案</b>：E2E ≈ 1.1 + 0.025 × 499 ≈ 1.1 + 12.5 ≈ <b>13.6 秒</b>。总时长减少 35%。</p>
+        <p><b>但这道题的陷阱是「值得吗」不能只看 E2E。</b>需要追问三件事：</p>
+        <p>① <b>用户真的会读完 500 个 token 吗？</b>如果多数用户扫两眼就走，那么 TTFT 恶化 300ms 是<b>所有人</b>都要付的代价，而 TPOT 的改善只有读完的人才享受得到。这种情况下新方案可能是净负面。</p>
+        <p>② <b>TPOT 40ms 是否已经快过阅读速度？</b>40ms/token 约合每秒 25 个 token，通常已快于人的阅读速度——那么把它降到 25ms 属于<b>用户感知不到的优化</b>，收益接近于零。</p>
+        <p>③ <b>模型小一半，质量退化了多少？</b>这才是真正的成本，必须用 eval 集量化（<a href="6-4-eval-pipeline.html">6.4</a>）。</p>
+        <p><b>结论</b>：多半不值得。这道题想训练的判断是——<b>E2E 是一个会误导人的聚合指标，优化它之前先问用户实际感知的是哪一段。</b></p>
+      </div>
+    </details>
+
+    <details>
+      <summary><span class="qtype">概念题</span>为什么增大 batch size 几乎总能提高吞吐，却不总能提高 goodput？</summary>
+      <div class="answer">
+        <p>因为吞吐只数「产出了多少 token」，而 goodput 只数「<b>满足 SLA 的</b>请求」。增大 batch，每一步处理的数据变多，单请求的延迟随之上升；当延迟越过 SLA 阈值，这些请求产出的 token 在业务上等于零——吞吐曲线还在涨，goodput 已经开始掉头向下。</p>
+        <p><b>实践含义</b>：容量规划应该以 goodput 峰值对应的 batch 配置为准，而不是吞吐峰值。两者往往不在同一点上，且吞吐峰值总是在更大的 batch 处——只盯吞吐会系统性地把系统配置到 SLA 违约区。</p>
+      </div>
+    </details>
+
+    <details>
+      <summary><span class="qtype">场景判断</span>监控显示 TTFT 的 P50 是 400ms 但 P99 飙到 9 秒，而 TPOT 的 P50/P99 都很平稳。问题最可能出在哪？</summary>
+      <div class="answer">
+        <p><b>TPOT 平稳说明解码本身没问题</b>——模型、硬件、batch 配置都健康。问题被锁定在 TTFT 独有的那几个成分上：<b>排队</b>或<b>超长输入</b>。</p>
+        <p><b>排队</b>（更常见）：负载已越过容量拐点，请求在队列里等待。特征是 P99 的恶化与 QPS 高峰在时间上重合，且和请求内容无关。</p>
+        <p><b>超长输入</b>：少数请求输入极长，prefill 计算量按 O(n²) 增长。特征是慢请求与长输入一一对应，与 QPS 无关。</p>
+        <p><b>怎么区分</b>：把 TTFT 按输入长度分桶。若各桶内的 P99 都高 → 排队问题，需扩容或限流；若只有长输入桶高 → 计算问题，需 chunked prefill、输入长度上限或长短请求分流。</p>
+        <p><b>反例警示</b>：如果此时有人提议「换个更小的模型」，那是在治 TPOT 的病——方向完全错了，而且会白白损失质量。</p>
+      </div>
+    </details>
+
+    <details>
+      <summary><span class="qtype">面试题改编</span>「你们的 LLM 服务延迟多少？」——这个问题该怎么回答才算专业？</summary>
+      <div class="answer">
+        <p>直接报一个数字是不合格的。合格的回答要包含四个要素：</p>
+        <p><b>① 拆指标</b>：报 TTFT 和 TPOT，而不是笼统的「延迟」，并说明是否包含排队。</p>
+        <p><b>② 报分位数</b>：P50 和 P99 至少各一个。均值在长尾分布上几乎没有信息量。</p>
+        <p><b>③ 给条件</b>：什么模型、什么输入长度分布、什么并发水平下测的。同一套系统在 10 QPS 和 100 QPS 下是两个完全不同的数字。</p>
+        <p><b>④ 关联 SLA</b>：这个数字对应的 goodput 是多少，即在这个延迟目标下系统能承载多少负载。</p>
+        <p>一个好的回答样例：「TTFT P50 约 400ms、P99 约 1.2s，TPOT P99 约 45ms；在输入 P95 为 4K token、并发 60 的负载下测得；SLA 是 TTFT P99 &lt; 2s，当前 goodput 余量约 40%。」——这个回答同时展示了指标体系、测量素养和容量意识。</p>
+      </div>
+    </details>
+
+  </div>
 </section>
 
 <nav class="next">
-  <a href="1-5-speculative-decoding.html">← 1.5 投机解码：用小模型打草稿</a>
-  <a href="2-2-prompt-caching.html">2.2 前缀缓存与提示词结构的反向约束 →</a>
+  <a href="1-5-speculative-decoding.html">← 1.5 Speculative Decoding</a>
+  <a href="2-2-prompt-caching.html">2.2 Prompt Caching →</a>
 </nav>
 
 </div>

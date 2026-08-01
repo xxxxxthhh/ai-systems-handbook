@@ -31,6 +31,21 @@ CLAUDE.md 写作红线：**不虚构论文数据；引用论文数字须可溯�
 
 ---
 
+## Part 2 · 服务与成本
+
+| 章节 | 数字 / 主张 | 条件（必须同时出现在正文） | 来源 | 状态 |
+|------|------------|---------------------------|------|------|
+| 2.1 | 服务容量 **2.6×**（Mistral-7B/1×A100）、**3.7×**（Yi-34B/2×A100）、**5.6×**（Falcon-180B + 流水线并行） | 基线均为 vLLM；衡量的是**满足延迟约束下的服务容量**，非裸吞吐 | Agrawal et al., *Taming Throughput-Latency Tradeoff in LLM Inference with Sarathi-Serve*, USENIX OSDI 2024 | 已核验 |
+| 2.1 | E2E ≈ TTFT + TPOT × (N−1) | 指标定义式 | — | 定义 |
+| 2.2 | 吞吐最高 **5×**；RadixAttention 自动前缀复用 | 相对基线系统；收益高度依赖负载的前缀共享程度 | Zheng et al., *SGLang: Efficient Execution of Structured Language Model Programs*, arXiv:2312.07104 + LMSYS 公开说明 | 已核验 |
+| 2.2 | 缓存节省 87% 的算例 | 明示假设：缓存读取价为普通输入 1/10、命中率≈100% | — | 自行推导 |
+| 2.3 | 成本下降 **>85%** (MT Bench) / **45%** (MMLU) / **35%** (GSM8K)，同时保持 **95%** GPT-4 性能 | 基线为全部使用 GPT-4；路由器由 Chatbot Arena 偏好数据训练 | Ong et al., *RouteLLM: Learning to Route LLMs from Preference Data*, arXiv:2406.18665 / ICLR 2025 | 已核验 |
+| 2.3 | 级联盈亏平衡 p < 1 − c_小/c_大 | 明示为自行推导 | — | 自行推导 |
+| 2.4 | Little's Law：在途请求数 = 到达率 × 停留时间 | 排队论经典结论 | — | 教科书结论 |
+| 2.4 | 全章容量推演（18 QPS 案例、39→21 张卡等） | **全部为匿名化示例假设**，正文明确要求读者代入自测数据重算 | — | 自行推导 |
+
+---
+
 ## 待补充
 
-Part 2–6 的引用在各 Part 撰写前批量核验后登记。
+Part 3–6 的引用在各 Part 撰写前批量核验后登记。

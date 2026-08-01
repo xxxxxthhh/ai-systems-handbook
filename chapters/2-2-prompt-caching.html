@@ -3,7 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>2.2 前缀缓存与提示词结构的反向约束 · AI 系统工程手册</title>
+<title>2.2 Prompt Caching · AI 系统工程手册</title>
+<meta name="description" content="前缀缓存的原理，以及它对提示词结构的反向约束。">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Noto+Sans+SC:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -20,22 +21,184 @@
 
 <header class="ch">
   <div class="blockrow" aria-hidden="true">
-    <span></span><span></span><span class="f"></span><span class="f"></span><span class="f"></span>
-    <span class="f"></span><span class="f"></span><span class="f"></span><span class="f"></span><span class="f"></span>
+    <span></span><span></span><span></span><span></span><span></span><span></span>
+    <span class="w"></span><span class="f"></span><span class="f"></span><span class="f"></span>
   </div>
   <div class="kicker">Part 2 · Serving &amp; Cost 服务与成本</div>
   <h1>2.2 Prompt Caching
-    <span class="zh">前缀缓存与提示词结构的反向约束</span>
+    <span class="zh">前缀缓存，与它对提示词结构的反向约束</span>
   </h1>
+  <div class="meta">
+    <span>难度 <b>★★☆</b></span>
+    <span>阅读 <b>~13 min</b></span>
+    <span>面试出现频率 <b>中高</b></span>
+    <span>前置 <b>1.2 KV Cache</b></span>
+  </div>
 </header>
 
+<!-- ================= 核心概念 ================= -->
 <section id="concept">
-  <div class="sec-tag"><span class="cell" style="background:var(--free)"></span><span class="lab">Draft 待撰写</span></div>
-  <p>本章尚未撰写。返回<a href="../index.html">全书目录</a>。</p>
+  <div class="sec-tag"><span class="cell"></span><span class="lab">Core Concept 核心概念</span></div>
+  <h2>为什么前缀可以被缓存</h2>
+
+  <p><a href="1-2-kv-cache.html">1.2</a> 讲过：每个 token 的 K/V 向量算出来之后就不再改变。这里要补上关键的第二句——<b>第 i 个 token 的 K/V 只取决于它自己和它前面的 token</b>（因果注意力的定义）。后面来什么内容，完全不影响前面已经算好的 K/V。</p>
+
+  <p>这个性质有一个立刻可用的推论：<b>两个请求只要开头的 token 序列完全相同，这段前缀的 KV cache 就是逐位相同的</b>。既然如此，第二个请求何必重算？把第一个请求的这段 KV 留着，直接接上去就行。</p>
+
+  <p>这就是 <span class="term">prompt caching</span>（提示词缓存，底层实现常称 <span class="term">prefix caching</span>，前缀缓存）。它跳过的是 <b>prefill 阶段</b>对已缓存部分的全部计算，因此收益出现在两个地方：</p>
+
+  <div class="formula"><b>TTFT 下降</b>——prefill 只需处理没命中的那部分 token<br><b>输入成本下降</b>——命中部分通常按显著折扣计费（自托管则是省下真实算力）<br><br>注意：<b>输出 token 的生成速度（TPOT）完全不受影响。</b><br>缓存只作用于 prefill，不作用于 decode。</div>
+
+  <p>为什么这件事值得单独一章？因为 LLM 应用的输入有一个普遍结构：<b>绝大部分内容在多次调用之间是重复的</b>。system prompt、工具定义、few-shot 示例、检索到的文档、多轮对话的历史——真正变化的往往只有末尾那一句用户提问。<a href="1-1-tokenization.html#quiz">1.1 的估算题</a>算过一个 6 轮对话：11,800 个输入 token 里有 6,240 个是同一段 system prompt 被重复计费了 6 次。缓存要吃掉的正是这一部分。</p>
+
+  <h3>唯一的规则：从第 0 个 token 开始的精确前缀匹配</h3>
+  <p>整章最重要的一句话：<b>缓存匹配是从头开始的、逐 token 精确的前缀匹配</b>。不是模糊匹配，不是「内容差不多」，也不是「找到中间那段相同的」。一旦第 k 个 token 不一致，<b>从 k 开始直到结尾的全部内容都必须重算</b>——哪怕后面的内容和上次一模一样。</p>
+
+  <p>因为 KV 依赖于「它前面的所有 token」，前缀一变，后面所有 token 的 K/V 都随之改变，缓存自然全部失效。这个机制简单得近乎粗暴，但正是它派生出了整章的工程结论。</p>
+
+  <figure>
+    <svg viewBox="0 0 760 290" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="提示词结构对缓存命中率的影响对比">
+      <text x="20" y="24" class="lbl">同样的内容，两种排列方式，缓存命中率天差地别</text>
+
+      <!-- BAD -->
+      <text x="20" y="58" class="sub">✗ 把易变内容放在开头</text>
+      <g>
+        <rect x="20"  y="68" width="118" height="34" rx="4" fill="var(--waste)"/><text x="79"  y="90" text-anchor="middle" class="onfill">当前时间戳</text>
+        <rect x="142" y="68" width="150" height="34" rx="4" fill="var(--free)"/><text x="217" y="90" text-anchor="middle" class="mn">system prompt</text>
+        <rect x="296" y="68" width="150" height="34" rx="4" fill="var(--free)"/><text x="371" y="90" text-anchor="middle" class="mn">工具定义</text>
+        <rect x="450" y="68" width="160" height="34" rx="4" fill="var(--free)"/><text x="530" y="90" text-anchor="middle" class="mn">few-shot 示例</text>
+        <rect x="614" y="68" width="126" height="34" rx="4" fill="var(--free)"/><text x="677" y="90" text-anchor="middle" class="mn">用户提问</text>
+      </g>
+      <line x1="20" y1="112" x2="740" y2="112" stroke="var(--waste)" stroke-width="2"/>
+      <text x="20" y="132" class="mn" fill="var(--waste)">第一个 token 就不同 → 后面全部作废 → 命中率 0%</text>
+
+      <!-- GOOD -->
+      <text x="20" y="176" class="sub">✓ 稳定内容前置，易变内容后置</text>
+      <g>
+        <rect x="20"  y="186" width="150" height="34" rx="4" fill="var(--alloc)"/><text x="95"  y="208" text-anchor="middle" class="onfill">system prompt</text>
+        <rect x="174" y="186" width="150" height="34" rx="4" fill="var(--alloc)"/><text x="249" y="208" text-anchor="middle" class="onfill">工具定义</text>
+        <rect x="328" y="186" width="160" height="34" rx="4" fill="var(--alloc)"/><text x="408" y="208" text-anchor="middle" class="onfill">few-shot 示例</text>
+        <rect x="492" y="186" width="118" height="34" rx="4" fill="var(--waste)"/><text x="551" y="208" text-anchor="middle" class="onfill">当前时间戳</text>
+        <rect x="614" y="186" width="126" height="34" rx="4" fill="var(--waste)"/><text x="677" y="208" text-anchor="middle" class="onfill">用户提问</text>
+      </g>
+      <line x1="20" y1="230" x2="492" y2="230" stroke="var(--alloc)" stroke-width="3"/>
+      <line x1="492" y1="230" x2="740" y2="230" stroke="var(--waste)" stroke-width="3"/>
+      <text x="20" y="250" class="mn" fill="var(--alloc)">这段命中缓存，prefill 跳过 ————————————→</text>
+      <text x="500" y="250" class="mn" fill="var(--waste)">仅此段重算</text>
+      <text x="20" y="276" class="sub">两种排列送给模型的信息完全相同，成本和 TTFT 却可能差出数倍。</text>
+    </svg>
+    <figcaption><b>图 1 · 缓存命中边界由第一个差异点决定。</b>蓝色 = 命中缓存、无需计算的部分；橙色 = 必须重新 prefill 的部分。<b>提示词的排列顺序从此不再只是可读性问题，而是成本问题。</b></figcaption>
+  </figure>
+
+  <h3>反向约束：缓存机制开始决定你怎么写提示词</h3>
+  <p>这是本章标题里「反向约束」的意思——一个底层的性能机制，反过来对上层的提示词工程提出了硬性要求。四条可以直接执行的规则：</p>
+
+  <p><b>① 按「变化频率」从低到高排列。</b>最稳定的（system prompt、工具 schema、few-shot）放最前，会话级的（历史对话、检索文档）放中间，请求级的（用户当前提问）放最后。这是唯一一条真正重要的规则，其余三条都是它的推论。</p>
+
+  <p><b>② 把动态噪声赶出前缀。</b>当前时间、请求 ID、随机排序的列表、用户昵称——这类内容一旦出现在靠前位置，会让缓存<b>永久命中率为零</b>，而且这个 bug 从功能测试上完全看不出来。如果业务确实需要当前时间，把它放到用户提问旁边。</p>
+
+  <p><b>③ 警惕「无害」的改动。</b>给 system prompt 加一个空格、调整 JSON 字段顺序、更新版本号注释——任何一处 token 级变化都会让全体缓存失效。所以 system prompt 应该被当作<b>需要版本管理和变更审批的资产</b>，而不是随手可改的配置。</p>
+
+  <p><b>④ 检索结果的顺序要稳定。</b>RAG 场景中，若把检索到的文档拼在提问之前，而检索结果的顺序在多次调用间不稳定（例如按分数排序但分数有微小抖动），缓存同样会大面积失效。可行的做法是固定排序规则，或干脆把文档放到提问之后。</p>
+
+  <div class="callout">
+    <p><b>一个容易踩的坑：缓存不是免费的。</b>写入缓存通常有额外开销（自托管是显存占用，商业 API 常有写入溢价），且缓存有存活时间。因此<b>只有被复用的前缀才划算</b>：一次性的长文档分析、每个用户各不相同的超长上下文，可能写入了就再也没命中，反而更贵。判断标准很简单——<b>这段前缀在缓存存活期内会被读几次？</b>少于一两次就不值得。</p>
+  </div>
+</section>
+
+<!-- ================= 案例 ================= -->
+<section id="case">
+  <div class="sec-tag"><span class="cell" style="background:var(--waste)"></span><span class="lab">Case Study 真实案例</span></div>
+  <h2>RadixAttention：把前缀共享做成自动的</h2>
+
+  <div class="case">
+    <div class="case-head"><span class="cell"></span>SGLang: Efficient Execution of Structured Language Model Programs</div>
+    <div class="case-body">
+      <p>早期的前缀缓存需要应用显式声明「这一段是可复用前缀」。SGLang 的 <span class="term">RadixAttention</span> 把它变成了自动机制：用一棵<b>基数树</b>（radix tree）组织所有请求的 KV cache，新请求进来时自动在树上匹配最长公共前缀，命中部分直接复用；配合 LRU 策略做淘汰。</p>
+      <p>树结构在这里是恰到好处的选择——它天然表达了「多个请求共享同一段前缀，然后各自分叉」的结构，而这正是 LLM 应用请求的典型形态：同一个 system prompt 下分出成千上万个不同的用户提问。</p>
+      <div class="stats">
+        <div class="stat"><div class="n good">最高 5×</div><div class="l">相对基线系统的吞吐提升</div></div>
+        <div class="stat"><div class="n good">自动</div><div class="l">跨请求前缀复用，无需应用显式声明</div></div>
+        <div class="stat"><div class="n good">TTFT ↓</div><div class="l">减少 prefill 计算，同时降低显存占用</div></div>
+      </div>
+      <p><b>条件</b>：提升幅度高度依赖负载的前缀共享程度——多轮对话、few-shot、同一套 system prompt 服务大量用户的场景收益最大；而每个请求都完全不同的负载则几乎没有收益。这也再次印证了本章的判断标准：<b>缓存的价值等于复用的程度。</b></p>
+      <p>值得注意的是它与 <a href="1-2-kv-cache.html">1.2 的 PagedAttention</a> 的关系：分页让「多个逻辑块指向同一个物理块」成为可能，RadixAttention 则在其上回答「哪些块应该被共享、什么时候淘汰」。<b>底层机制解锁能力，上层策略决定收益。</b></p>
+      <div class="src">来源：Zheng et al., "SGLang: Efficient Execution of Structured Language Model Programs" (arXiv:2312.07104) 及 LMSYS 项目公开说明。数字引自公开报告；示意图为本书重绘。</div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 工具层 ================= -->
+<section id="tools">
+  <div class="sec-tag"><span class="cell" style="background:var(--free)"></span><span class="lab">Tooling Sidebar 工具层</span></div>
+  <div class="toolbox">
+    <div class="toolbox-head">
+      <span class="t">各家缓存机制的差异（会过期，正文不依赖本区块）</span>
+      <span class="date">截至 2026-08</span>
+    </div>
+    <div class="toolbox-body">
+      <p><b>显式 vs 自动</b>：商业 API 分两类——需要在请求里<b>手动标记缓存断点</b>的（对可缓存段的边界有精确控制），和<b>自动匹配前缀</b>的（无需改代码，但控制力弱）。接入前必须确认你用的是哪一种，这决定了要不要改调用代码。</p>
+      <p><b>三个必查参数</b>：① <b>最小可缓存长度</b>——短于某个 token 数的前缀通常不予缓存；② <b>存活时间 TTL</b>——通常是分钟级，长间隔的请求命中不了；③ <b>计费方式</b>——缓存写入、缓存读取、普通输入三者单价各不相同，且各家差异很大。<b>价格属于工具层，请以官方文档为准，本书不给具体数字。</b></p>
+      <p><b>自托管</b>：vLLM 用 <code>--enable-prefix-caching</code> 开启自动前缀缓存；SGLang 默认启用 RadixAttention。自托管没有「缓存计费」，代价是显存——缓存占用的显存会挤压可用于并发的 KV 预算，需在 <a href="2-4-capacity-planning.html">2.4</a> 的容量模型里一并考虑。</p>
+      <p><b>怎么验证真的命中了</b>：不要假设它生效了。商业 API 一般在响应里返回缓存读/写的 token 数，<b>把它接进监控，做成「缓存命中率」指标</b>；自托管则看框架暴露的 prefix cache 命中率。一次不慎的 system prompt 改动就可能让命中率归零，而账单要到月底才会告诉你。</p>
+    </div>
+  </div>
+</section>
+
+<!-- ================= Quiz ================= -->
+<section id="quiz">
+  <div class="sec-tag"><span class="cell"></span><span class="lab">Quiz 自测</span></div>
+  <h2>章末自测</h2>
+  <div class="quiz">
+
+    <details>
+      <summary><span class="qtype">估算题</span>客服机器人：system prompt + 工具定义 + few-shot 共 3000 token 固定不变，每轮用户提问约 100 token，日均 50 万次调用。假设缓存读取价格为普通输入的 1/10，开启缓存能省下多少比例的输入成本？</summary>
+      <div class="answer">
+        <p><b>不开缓存</b>：每次输入 3100 token，按单价 1 计，日成本 = 50万 × 3100 = <b>15.5 亿单位</b>。</p>
+        <p><b>开缓存</b>（假设命中率接近 100%，忽略写入开销）：命中部分 3000 token 按 0.1 计价 = 300；未命中 100 token 按 1 计价 = 100。每次 = 400 单位，日成本 = 50万 × 400 = <b>2 亿单位</b>。</p>
+        <p><b>节省 ≈ 87%</b>。同时 TTFT 也会明显下降，因为 3000 token 的 prefill 被跳过了。</p>
+        <p><b>但要检查两个前提</b>：① <b>调用频率必须高于缓存 TTL</b>——若 TTL 是 5 分钟而调用稀疏，大量请求会落在缓存过期后，实际命中率远低于 100%，收益按比例缩水；② <b>那 3000 token 必须真的一字不变</b>——如果里面嵌了当前日期，命中率是 0 而不是 100%。</p>
+        <p><b>这道题的真正考点</b>：缓存收益 = 可缓存前缀占比 × 命中率 × 折扣力度。三个因子任何一个塌掉，收益都会消失，而<b>只有第一个因子是设计时可见的</b>。</p>
+      </div>
+    </details>
+
+    <details>
+      <summary><span class="qtype">场景判断</span>团队开启了 prompt caching，但账单几乎没变。排查方向按什么顺序展开？</summary>
+      <div class="answer">
+        <p><b>先量再猜</b>：第一步永远是确认命中率指标（响应里的缓存读取 token 数）。若命中率本身就接近 0，往下查；若命中率很高但账单没变，说明可缓存部分占比太小，是设计问题而非配置问题。</p>
+        <p>命中率为 0 的常见原因，按发生频率排序：</p>
+        <p><b>① 前缀里有动态内容</b>——最常见。当前时间、请求 ID、用户名、随机排序的检索结果出现在靠前位置。检查方法：把连续两次请求的完整 prompt 逐字符 diff，第一个差异点之后的全部内容都是没命中的。</p>
+        <p><b>② 顺序放反了</b>——用户提问放在了 system prompt 前面，或每次拼接顺序不稳定。</p>
+        <p><b>③ 没达到最小可缓存长度</b>——前缀太短，服务端根本不缓存。</p>
+        <p><b>④ TTL 过期</b>——调用间隔大于缓存存活时间。这类情况命中率会呈现明显的时间相关性（高峰期高、低谷期低）。</p>
+        <p><b>⑤ 没真正开启</b>——显式缓存机制需要在请求中标记，只改了配置没改调用代码。</p>
+      </div>
+    </details>
+
+    <details>
+      <summary><span class="qtype">概念题</span>为什么 prompt caching 能降低 TTFT，却对 TPOT 毫无帮助？</summary>
+      <div class="answer">
+        <p>因为缓存复用的是<b>已经算好的 KV cache</b>，它替代的是 prefill 阶段的计算。TTFT 主要由 prefill 时间构成，跳过大部分 prefill，TTFT 自然下降。</p>
+        <p>而 TPOT 由 decode 阶段决定：每生成一个新 token，都要完整读一遍模型权重、并对全部 KV cache 做注意力计算。这部分工作<b>与前缀是算出来的还是缓存来的毫无关系</b>——缓存省的是「算 K/V」，不是「用 K/V」。</p>
+        <p><b>甚至要注意反向效应</b>：命中缓存意味着上下文里有一段很长的前缀，decode 每一步都要对它做注意力计算，所以长前缀下的 TPOT 反而略高于短前缀。缓存让你「更便宜地拥有长上下文」，但长上下文本身的解码成本依然存在。</p>
+      </div>
+    </details>
+
+    <details>
+      <summary><span class="qtype">架构评审</span>某 RAG 系统的 prompt 结构为：`[检索到的 5 篇文档] + [system prompt] + [对话历史] + [用户提问]`，检索结果按相关性分数降序排列。指出其中的缓存设计问题。</summary>
+      <div class="answer">
+        <p><b>问题一：最易变的内容被放在了最前面。</b>检索结果因查询而异，几乎每次都不同——这直接导致命中率恒为 0，后面的 system prompt 和对话历史（本来是最该被缓存的部分）全部陪葬。这是整个设计里唯一致命的错误。</p>
+        <p><b>问题二：即使把文档后移，排序抖动仍是隐患。</b>相关性分数相近的文档，顺序可能在多次检索间发生变化；若文档段本身希望被缓存（比如同一批文档服务多轮追问），不稳定的排序会让它失效。修法是按文档 ID 等稳定键做二次排序。</p>
+        <p><b>问题三：对话历史放在用户提问之前是对的，但要注意历史的截断策略。</b>如果采用「保留最近 N 轮」的滑动窗口，那么每多一轮，<b>历史的开头就会被切掉一段</b>，前缀随之改变、缓存全部失效。更缓存友好的做法是从头累积、只在超限时做一次性压缩（见 <a href="4-3-memory.html">4.3</a>），把失效频率从「每轮」降到「偶尔」。</p>
+        <p><b>建议结构</b>：<code>[system prompt] + [工具定义] + [对话历史（累积式）] + [检索文档] + [用户提问]</code>——严格按变化频率从低到高排列。</p>
+      </div>
+    </details>
+
+  </div>
 </section>
 
 <nav class="next">
-  <a href="2-1-latency-metrics.html">← 2.1 延迟指标体系：TTFT / TPOT / E2E</a>
+  <a href="2-1-latency-metrics.html">← 2.1 延迟指标体系</a>
   <a href="2-3-model-routing.html">2.3 模型分级与路由 →</a>
 </nav>
 
