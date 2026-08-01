@@ -127,15 +127,17 @@
     <div class="case-body">
       <p>Anthropic 公开分享过他们构建多 agent 研究系统的工程经验。这份材料的价值在于，它同时给出了<b>收益和代价</b>——这在多 agent 的讨论中很少见。</p>
       <div class="stats">
-        <div class="stat"><div class="n good">+90.2%</div><div class="l">在其内部研究类评测上相对单 agent 的表现提升</div></div>
-        <div class="stat"><div class="n bad">~15×</div><div class="l">相对普通对话的 token 消耗倍数</div></div>
-        <div class="stat"><div class="n">~80%</div><div class="l">token 用量本身即可解释的性能方差比例</div></div>
+        <div class="stat"><div class="n good">+90.2%</div><div class="l">Opus 4 主 agent + Sonnet 4 子 agent，相对<b>单 agent Opus 4</b>，在其<b>内部研究类评测</b>上</div></div>
+        <div class="stat"><div class="n bad">~15×</div><div class="l">多 agent 相对普通对话的 token 消耗（单 agent 约 4×）</div></div>
+        <div class="stat"><div class="n">80%</div><div class="l">token 用量本身可解释的性能方差（BrowseComp 分析）</div></div>
+        <div class="stat"><div class="n">95%</div><div class="l">token 用量 + 工具调用次数 + 模型选择三者合计可解释的方差</div></div>
       </div>
-      <p><b>第三个数字才是这份报告里最有信息量的部分。</b>如果 token 用量能解释约八成的性能差异，那么意味着：<b>多 agent 的大部分收益并非来自「多个专家协作」这种架构魔法，而是来自「投入了多得多的计算」</b>。这个认识会立刻改变你的评估方式——比较多 agent 与单 agent 时，<b>必须在相当的 token 预算下比较</b>，否则你测的只是「花更多钱效果更好」，那几乎是必然的。</p>
+      <p><b>务必连条件一起记</b>：90.2% 是<b>特定模型搭配</b>（Opus 4 领队、Sonnet 4 做子 agent）对<b>单 agent Opus 4</b> 的对比，评测是他们<b>内部的研究类任务集</b>，其典型形态是<b>需要多个独立方向并行展开的广度优先查询</b>（例如「找出标普 500 信息技术板块所有公司的董事会成员」）。<b>这个任务形态本身就是多 agent 的最佳场景</b>——换成紧耦合任务，结论会完全不同。</p>
+      <p><b>第三、四个数字才是这份报告里最有信息量的部分。</b>如果 token 用量单独就能解释约八成的性能方差（再加上工具调用次数与模型选择，三者合计解释 95%），那么意味着：<b>多 agent 的大部分收益并非来自「多个专家协作」这种架构魔法，而是来自「投入了多得多的计算」</b>。这个认识会立刻改变你的评估方式——比较多 agent 与单 agent 时，<b>必须在相当的 token 预算下比较</b>，否则你测的只是「花更多钱效果更好」，那几乎是必然的。</p>
       <p><b>关于适用边界</b>，这份材料的判断与本章正文一致：多 agent 擅长可以拆成<b>并行研究分支</b>的问题，而对<b>紧密耦合的任务（如写代码）</b>效果较差。经济性上的结论也很直白——15 倍的 token 消耗意味着它只适用于<b>任务价值明显高于计算成本</b>的场景，例如法律尽调、竞品情报、生物医学文献综述这类高价值研究工作。</p>
       <p><b>怎么用这份材料</b>：不要把 90.2% 当作「多 agent 更好」的证据搬到自己的场景。<b>要记住的是那个三元组</b>——<b>收益（并行探索）、代价（约 15× token）、适用条件（任务可并行拆分且价值高）</b>。拿这三条去对照你自己的任务，通常会发现结论是「不该上」。</p>
-      <p><b>条件说明</b>：上述数字来自厂商自身在其内部研究类评测上的公开报告，评测任务、基线设置与模型配置均由该团队定义，不构成跨场景可比的通用结论。<b>把它当作一个有参考价值的工程案例，而不是一项独立验证的基准结果。</b></p>
-      <div class="src">来源：Anthropic 公开工程博客关于多 agent 研究系统的分享。数字（+90.2%、约 15× token、约 80% 方差解释）引自该公开报告；均为厂商在其内部评测上的自报结果，本书未独立复现。</div>
+      <p><b>条件说明</b>：上述数字来自厂商自身的公开工程报告，评测任务、基线设置与模型配置均由该团队定义，<b>不构成跨场景可比的通用结论</b>。把它当作一个有参考价值的工程案例，而不是一项独立验证的基准结果。</p>
+      <div class="src">来源：Anthropic 工程博客 "How we built our multi-agent research system"。数字（+90.2%、约 15× token、80%/95% 方差解释）及其条件均引自该文原文；90.2% 为 Opus 4 主 agent + Sonnet 4 子 agent 对单 agent Opus 4 在其内部研究评测上的结果，方差分析出自 BrowseComp。均为厂商自报结果，本书未独立复现。</div>
     </div>
   </div>
 </section>

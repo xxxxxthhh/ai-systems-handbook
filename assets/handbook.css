@@ -224,7 +224,11 @@ svg .onfill{font:500 11px 'IBM Plex Mono',monospace;fill:var(--on-fill)}
   .part-head .tag{margin-left:0;flex-basis:100%}
 }
 @media print{
-  html, html[data-theme="dark"]{
+  /* 三个选择器缺一不可：prefers-color-scheme 在打印时依然生效，而系统深色那条规则的
+     选择器 html:not([data-theme="light"]) 特异度为 (0,1,1)，会压过单独的 html (0,0,1)。
+     不写第三个选择器时，「系统深色 + 用户从未手动切换」这一默认状态下打印出来会是
+     白纸配浅灰字。此处补齐后特异度持平、且本块在源码中更靠后，打印样式稳定获胜。 */
+  html, html[data-theme="dark"], html:not([data-theme="light"]){
     --paper:#fff;--ink:#1B2733;--ink-soft:#4A5A68;--alloc:#2F6DE0;--alloc-soft:#DCE7FB;
     --waste:#E0632F;--waste-soft:#FBE6DA;--free:#C6CDD2;--line:#D8DDDE;--card:#FFFFFF;
     --code-bg:#EDF0EE;--tool-bg:#F1F3F0;--answer-bg:#FBFCFA;--head-bg:#1B2733;--head-fg:#fff;
@@ -233,7 +237,8 @@ svg .onfill{font:500 11px 'IBM Plex Mono',monospace;fill:var(--on-fill)}
   .theme-toggle,.quiz-ctl,.crumb{display:none}
   body{background:#fff;font-size:12.5px}
   .quiz details{page-break-inside:avoid}
-  .quiz details:not([open]) .answer{display:block}
+  /* 打印时展开全部答案由 quiz.js 的 beforeprint 钩子负责实际展开 <details>；
+     关闭状态的 <details> 是由 UA 在内容槽层面隐藏的，仅靠对 .answer 设 display 无法可靠覆盖。 */
   .quiz summary::after{display:none}
   figure,.case,.toolbox{page-break-inside:avoid}
   .next{display:none}

@@ -37,6 +37,14 @@ python3 reference/check.py
 可加 Part 号只检查部分章节，如 `python3 reference/check.py 3 4`。
 
 ```bash
+python3 reference/check_print.py
+```
+
+打印样式自检（需 playwright，未安装时自动跳过）：在「打印媒体 + 系统深色 + 用户从未手动切换」
+这一最容易出问题的场景下，验证强制浅色、隐藏切换按钮、quiz 答案全部展开。
+**打印样式无法被静态检查覆盖，而它出过一次真实 bug**，因此单独成一项。
+
+```bash
 python3 reference/gen_appendix.py
 ```
 

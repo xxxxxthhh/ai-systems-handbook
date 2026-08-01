@@ -89,22 +89,34 @@ def check_chapter(path, name):
 
 
 def check_links():
-    pages = {}
+    pages = []
     for d in [ROOT, CHAPTERS]:
         for f in os.listdir(d):
             if f.endswith(".html"):
-                pages[os.path.join(d, f)] = None
+                pages.append(os.path.join(d, f))
+
+    # 每个页面拥有的锚点集合，用于校验 #fragment 是否真的落得下去
+    ids = {}
+    for p in pages:
+        ids[os.path.normpath(p)] = set(
+            re.findall(r'id="([^"]+)"', open(p, encoding="utf-8").read()))
+
     for path in pages:
         base = os.path.dirname(path)
         name = os.path.relpath(path, ROOT)
         for href in re.findall(r'href="([^"]+)"', open(path, encoding="utf-8").read()):
-            if href.startswith(("http", "#", "mailto:")):
+            if href.startswith(("http", "mailto:")):
                 continue
-            target = href.split("#")[0]
-            if not target:
-                continue
-            if not os.path.exists(os.path.normpath(os.path.join(base, target))):
+            target, _, frag = href.partition("#")
+            tgt_path = os.path.normpath(os.path.join(base, target)) if target else \
+                os.path.normpath(path)
+            if not os.path.exists(tgt_path):
                 err(name, "死链: {}".format(href))
+                continue
+            # 锚点必须真实存在，否则读者会被静默地丢到页首
+            # （术语表「首次出现章节」链接的价值完全依赖这一点）
+            if frag and frag not in ids.get(tgt_path, set()):
+                err(name, "锚点不存在: {}".format(href))
 
 
 def main():

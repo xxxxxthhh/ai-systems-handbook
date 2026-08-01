@@ -20,6 +20,25 @@
     });
   }
 
+  // 打印时展开全部答案，打印结束后恢复原状。
+  // 不能只靠 CSS：关闭状态的 <details> 由 UA 在内容槽层面隐藏，
+  // 对其子元素设 display 无法可靠覆盖，必须真的把 open 打开。
+  window.addEventListener('beforeprint', function () {
+    document.querySelectorAll('.quiz details').forEach(function (d) {
+      if (!d.open) {
+        d.dataset.wasClosed = '1';
+        d.open = true;
+      }
+    });
+  });
+
+  window.addEventListener('afterprint', function () {
+    document.querySelectorAll('.quiz details[data-was-closed]').forEach(function (d) {
+      d.open = false;
+      delete d.dataset.wasClosed;
+    });
+  });
+
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', init);
   } else {
