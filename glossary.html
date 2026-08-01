@@ -3,7 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>术语表 · AI 系统工程手册</title>
+<title>术语表 Glossary · AI 系统工程手册</title>
+<meta name="description" content="全书技术术语的英文原文、中文解释与首次出现章节锚点。">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Noto+Sans+SC:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -15,15 +16,459 @@
   <span class="moon" aria-hidden="true">🌙</span><span class="sun" aria-hidden="true">☀️</span>
 </button>
 <div class="wrap">
-<nav class="crumb"><a href="index.html">← 目录</a> · 附录</nav>
+
+<nav class="crumb"><a href="index.html">← 目录</a> · 附录 B</nav>
+
 <header class="ch">
+  <div class="blockrow" aria-hidden="true">
+    <span></span><span></span><span></span><span class="w"></span><span></span>
+    <span></span><span class="f"></span><span></span><span class="f"></span><span class="f"></span>
+  </div>
   <div class="kicker">Appendix B</div>
-  <h1>术语表<span class="zh">Glossary</span></h1>
+  <h1>Glossary
+    <span class="zh">术语表 Glossary</span>
+  </h1>
+  <div class="meta"><span>本页由 <b>reference/gen_appendix.py</b> 从各章自动生成</span></div>
 </header>
-<section>
-  <div class="sec-tag"><span class="cell" style="background:var(--free)"></span><span class="lab">Draft 待撰写</span></div>
-  <p>本附录尚未撰写。返回<a href="index.html">全书目录</a>。</p>
+<section style="margin-top:40px">
+<p>全书共 <b>69</b> 条术语。每条给出英文原文、中文解释，以及<b>首次出现章节的锚点链接</b>——点击可直接跳到该术语被引入的段落。业界无通用中文译名的术语保持英文，本书不生造译名。</p>
+<div class="gl-nav">
+<a href="#gl-A">A</a>
+<a href="#gl-B">B</a>
+<a href="#gl-C">C</a>
+<a href="#gl-D">D</a>
+<a href="#gl-E">E</a>
+<a href="#gl-F">F</a>
+<a href="#gl-G">G</a>
+<a href="#gl-H">H</a>
+<a href="#gl-I">I</a>
+<a href="#gl-K">K</a>
+<a href="#gl-L">L</a>
+<a href="#gl-M">M</a>
+<a href="#gl-N">N</a>
+<a href="#gl-O">O</a>
+<a href="#gl-P">P</a>
+<a href="#gl-Q">Q</a>
+<a href="#gl-R">R</a>
+<a href="#gl-S">S</a>
+<a href="#gl-T">T</a>
+<a href="#gl-V">V</a>
+<a href="#gl-W">W</a>
+</div>
 </section>
+<div class="gl-group" id="gl-A">
+<h2>A</h2>
+<div class="gl-item">
+<div><span class="en">abstention</span><span class="zh">拒答</span></div>
+<div class="desc">模型在依据不足时明确表示无法回答。两类错误代价不对称——过度自信悄无声息，过度保守立刻被发现，因此默认应偏保守。</div>
+<div class="ref">首次出现：<a href="chapters/6-3-hallucination.html#concept">6.3 幻觉的工程化缓解</a></div>
+</div>
+<div class="gl-item">
+<div><span class="en">autoregressive</span><span class="zh">自回归</span></div>
+<div class="desc">每次生成一个 token 并把它拼回输入再生成下一个的方式。它决定了解码必然是串行的。</div>
+<div class="ref">首次出现：<a href="chapters/1-2-kv-cache.html#concept">1.2 KV Cache 与 PagedAttention</a></div>
+</div>
+</div>
+<div class="gl-group" id="gl-B">
+<h2>B</h2>
+<div class="gl-item">
+<div><span class="en">block</span><span class="zh">块</span></div>
+<div class="desc">PagedAttention 中固定大小的 KV cache 分配单元（如 16 个 token 一块）。</div>
+<div class="ref">首次出现：<a href="chapters/1-2-kv-cache.html#concept">1.2 KV Cache 与 PagedAttention</a></div>
+</div>
+<div class="gl-item">
+<div><span class="en">block table</span><span class="zh">块表</span></div>
+<div class="desc">记录「逻辑块 N 存放在哪个物理块」的映射表，使显存分配无需连续。</div>
+<div class="ref">首次出现：<a href="chapters/1-2-kv-cache.html#concept">1.2 KV Cache 与 PagedAttention</a></div>
+</div>
+<div class="gl-item">
+<div><span class="en">BM25</span><span class="zh">BM25</span></div>
+<div class="desc">基于词频与文档长度归一的经典词法检索算法。因为不需要泛化，它在跨领域场景下依然是稳健基线。</div>
+<div class="ref">首次出现：<a href="chapters/3-3-hybrid-search-rerank.html#concept">3.3 Embedding、Hybrid Search 与 Rerank</a></div>
+</div>
+<div class="gl-item">
+<div><span class="en">BPE</span><span class="zh">字节对编码</span></div>
+<div class="desc">Byte Pair Encoding。从字节开始反复合并高频相邻符号对，得到固定大小词表的分词方法。高频内容压成一个 token，低频内容退化为碎片，且永不 OOV。</div>
+<div class="ref">首次出现：<a href="chapters/1-1-tokenization.html#concept">1.1 Tokenization 与 Context Window</a></div>
+</div>
+</div>
+<div class="gl-group" id="gl-C">
+<h2>C</h2>
+<div class="gl-item">
+<div><span class="en">catastrophic forgetting</span><span class="zh">灾难性遗忘</span></div>
+<div class="desc">在新任务上训练导致旧能力退化。它在目标任务指标上完全不可见，必须用无关的能力回归测试来检测。</div>
+<div class="ref">首次出现：<a href="chapters/5-3-data-engineering.html#concept">5.3 数据工程 — 真正的瓶颈</a></div>
+</div>
+<div class="gl-item">
+<div><span class="en">chunk</span><span class="zh">文本块</span></div>
+<div class="desc">文档被切分后的检索单元。「检索要小、理解要大」的两难可通过「小块检索、大块生成」解耦。</div>
+<div class="ref">首次出现：<a href="chapters/3-2-chunking.html#concept">3.2 Chunking 策略</a></div>
+</div>
+<div class="gl-item">
+<div><span class="en">chunked prefill</span><span class="zh">分块预填充</span></div>
+<div class="desc">把长 prefill 切成小块摊到多次迭代，避免它阻塞正在进行的解码。用少量 TTFT 换取平稳的 TPOT。</div>
+<div class="ref">首次出现：<a href="chapters/1-3-continuous-batching.html#concept">1.3 Continuous Batching</a></div>
+</div>
+<div class="gl-item">
+<div><span class="en">circuit breaker</span><span class="zh">熔断器</span></div>
+<div class="desc">连续失败达阈值后快速失败、定期试探恢复。既避免拖死自己，也给上游留出恢复空间。</div>
+<div class="ref">首次出现：<a href="chapters/6-5-degradation-fallback.html#concept">6.5 Degradation 与 Fallback</a></div>
+</div>
+<div class="gl-item">
+<div><span class="en">context window</span><span class="zh">上下文窗口</span></div>
+<div class="desc">模型单次能处理的最大 token 数。它是能力上限而非使用建议——填满它的代价随长度超线性增长。</div>
+<div class="ref">首次出现：<a href="chapters/1-1-tokenization.html#concept">1.1 Tokenization 与 Context Window</a></div>
+</div>
+<div class="gl-item">
+<div><span class="en">continuous batching</span><span class="zh">连续批处理</span></div>
+<div class="desc">以一次 forward 迭代为调度单位，完成的序列立即离场、新请求立即补位。消除的是时间维度的浪费。</div>
+<div class="ref">首次出现：<a href="chapters/1-3-continuous-batching.html#concept">1.3 Continuous Batching</a></div>
+</div>
+<div class="gl-item">
+<div><span class="en">copy-on-write</span><span class="zh">写时复制</span></div>
+<div class="desc">多方共享同一份数据、直到有人要写入时才复制的机制。使多条序列可以共享公共前缀的 KV。</div>
+<div class="ref">首次出现：<a href="chapters/1-2-kv-cache.html#concept">1.2 KV Cache 与 PagedAttention</a></div>
+</div>
+</div>
+<div class="gl-group" id="gl-D">
+<h2>D</h2>
+<div class="gl-item">
+<div><span class="en">decode</span><span class="zh">解码</span></div>
+<div class="desc">推理的第二阶段，逐个生成输出 token。每步只算一个 token 但要读取全部权重，因此受显存带宽限制。</div>
+<div class="ref">首次出现：<a href="chapters/1-1-tokenization.html#concept">1.1 Tokenization 与 Context Window</a></div>
+</div>
+<div class="gl-item">
+<div><span class="en">dense retrieval</span><span class="zh">稠密检索</span></div>
+<div class="desc">基于向量相似度的检索。擅长语义改写，但在精确标识符、罕见词、否定与领域外场景上有系统性盲区。</div>
+<div class="ref">首次出现：<a href="chapters/3-3-hybrid-search-rerank.html#concept">3.3 Embedding、Hybrid Search 与 Rerank</a></div>
+</div>
+<div class="gl-item">
+<div><span class="en">distillation</span><span class="zh">蒸馏</span></div>
+<div class="desc">用强模型的输出训练小模型，使其在窄任务上接近强模型。教师的错误率会被学生继承，因此数据过滤是关键。</div>
+<div class="ref">首次出现：<a href="chapters/5-1-finetune-decision.html#concept">5.1 Fine-tune 是最后的手段</a></div>
+</div>
+</div>
+<div class="gl-group" id="gl-E">
+<h2>E</h2>
+<div class="gl-item">
+<div><span class="en">embedding</span><span class="zh">向量嵌入</span></div>
+<div class="desc">把文本映射为高维向量，使语义相近的文本距离相近。本质是有损压缩，优先保留大意、丢弃细节。</div>
+<div class="ref">首次出现：<a href="chapters/3-3-hybrid-search-rerank.html#concept">3.3 Embedding、Hybrid Search 与 Rerank</a></div>
+</div>
+</div>
+<div class="gl-group" id="gl-F">
+<h2>F</h2>
+<div class="gl-item">
+<div><span class="en">function calling</span><span class="zh">函数调用</span></div>
+<div class="desc">模型输出结构化的工具调用请求。模型本身从不执行任何工具——执行的是你的代码，安全边界也在那里。</div>
+<div class="ref">首次出现：<a href="chapters/4-1-tool-use.html#concept">4.1 Tool Use 基础</a></div>
+</div>
+</div>
+<div class="gl-group" id="gl-G">
+<h2>G</h2>
+<div class="gl-item">
+<div><span class="en">goodput</span><span class="zh">有效吞吐</span></div>
+<div class="desc">单位时间内满足 SLA 的请求数。容量规划应以它而非裸吞吐为准，两者的峰值通常不在同一点。</div>
+<div class="ref">首次出现：<a href="chapters/2-1-latency-metrics.html#concept">2.1 延迟指标体系</a></div>
+</div>
+<div class="gl-item">
+<div><span class="en">GQA</span><span class="zh">分组查询注意力</span></div>
+<div class="desc">Grouped-Query Attention。多个 query head 共享一组 KV head，按比例直接降低 KV cache 占用。它省的不是算力，是显存。</div>
+<div class="ref">首次出现：<a href="chapters/1-2-kv-cache.html#concept">1.2 KV Cache 与 PagedAttention</a></div>
+</div>
+<div class="gl-item">
+<div><span class="en">groundedness</span><span class="zh">忠实度</span></div>
+<div class="desc">回答中的事实性陈述能否在检索到的材料中找到依据。它比「正确率」更适合作为 RAG 生成层的核心指标，因为可自动化、可归因。</div>
+<div class="ref">首次出现：<a href="chapters/3-5-rag-eval.html#concept">3.5 RAG 评估</a></div>
+</div>
+</div>
+<div class="gl-group" id="gl-H">
+<h2>H</h2>
+<div class="gl-item">
+<div><span class="en">hallucination</span><span class="zh">幻觉</span></div>
+<div class="desc">模型生成看似合理但与事实不符的内容。它是生成机制的固有产物，工程目标是让它可检测、可控，而非消灭它。</div>
+<div class="ref">首次出现：<a href="chapters/3-1-why-rag.html#concept">3.1 为什么需要 RAG</a></div>
+</div>
+</div>
+<div class="gl-group" id="gl-I">
+<h2>I</h2>
+<div class="gl-item">
+<div><span class="en">indirect prompt injection</span><span class="zh">间接提示注入</span></div>
+<div class="desc">把恶意指令藏在模型会读到的外部内容里，借受害者的权限执行。凡是接入检索或工具的系统都要按它来建模。</div>
+<div class="ref">首次出现：<a href="chapters/6-2-prompt-injection.html#concept">6.2 Prompt Injection 与安全</a></div>
+</div>
+<div class="gl-item">
+<div><span class="en">iteration-level scheduling</span><span class="zh">迭代级调度</span></div>
+<div class="desc">连续批处理在论文中的名称，强调调度粒度从「请求」下降到「迭代」。</div>
+<div class="ref">首次出现：<a href="chapters/1-3-continuous-batching.html#concept">1.3 Continuous Batching</a></div>
+</div>
+</div>
+<div class="gl-group" id="gl-K">
+<h2>K</h2>
+<div class="gl-item">
+<div><span class="en">Key</span><span class="zh">键向量</span></div>
+<div class="desc">attention 机制中用于与 Query 做匹配的向量，逐 token 计算后可缓存复用。</div>
+<div class="ref">首次出现：<a href="chapters/1-2-kv-cache.html#concept">1.2 KV Cache 与 PagedAttention</a></div>
+</div>
+<div class="gl-item">
+<div><span class="en">KV cache</span><span class="zh">键值缓存</span></div>
+<div class="desc">缓存已计算的 Key/Value 向量以避免重复计算。占用显存随并发数与序列长度线性增长，常常是并发上限的真正瓶颈。</div>
+<div class="ref">首次出现：<a href="chapters/1-2-kv-cache.html#concept">1.2 KV Cache 与 PagedAttention</a></div>
+</div>
+</div>
+<div class="gl-group" id="gl-L">
+<h2>L</h2>
+<div class="gl-item">
+<div><span class="en">Little&#x27;s Law</span><span class="zh">利特尔法则</span></div>
+<div class="desc">稳态系统中「平均在途请求数 = 到达率 × 平均停留时间」。用于把 QPS 换算成并发数，进而推导 KV cache 需求。</div>
+<div class="ref">首次出现：<a href="chapters/2-4-capacity-planning.html#concept">2.4 容量规划与成本估算</a></div>
+</div>
+<div class="gl-item">
+<div><span class="en">LLM-as-judge</span><span class="zh">模型评委</span></div>
+<div class="desc">用模型给模型的输出打分。必须先用人工标注校准一致率——未校准的评委比没有评委更危险。</div>
+<div class="ref">首次出现：<a href="chapters/6-4-eval-pipeline.html#concept">6.4 Eval Pipeline</a></div>
+</div>
+<div class="gl-item">
+<div><span class="en">LoRA</span><span class="zh">低秩适配</span></div>
+<div class="desc">Low-Rank Adaptation。冻结原权重，用两个低秩矩阵表示改动量。推理时可合并回原权重，零额外延迟。</div>
+<div class="ref">首次出现：<a href="chapters/5-2-sft-peft.html#concept">5.2 SFT 与 PEFT 家族</a></div>
+</div>
+<div class="gl-item">
+<div><span class="en">lost in the middle</span><span class="zh">中间迷失</span></div>
+<div class="desc">相关信息位于长上下文中部时模型利用率明显下降的现象，呈 U 形曲线。说明「塞进去不等于用得上」。</div>
+<div class="ref">首次出现：<a href="chapters/3-4-rag-vs-long-context.html#concept">3.4 RAG 是错误答案的时候</a></div>
+</div>
+</div>
+<div class="gl-group" id="gl-M">
+<h2>M</h2>
+<div class="gl-item">
+<div><span class="en">memory</span><span class="zh">记忆</span></div>
+<div class="desc">agent 语境下由应用层构造的上下文管理机制。模型本身无记忆，它「记得」只是因为你又发了一遍。</div>
+<div class="ref">首次出现：<a href="chapters/4-3-memory.html#concept">4.3 Memory 设计</a></div>
+</div>
+<div class="gl-item">
+<div><span class="en">memory bandwidth</span><span class="zh">显存带宽</span></div>
+<div class="desc">数据在显存与计算单元之间的传输速率。解码阶段的真正瓶颈通常是它而非算力。</div>
+<div class="ref">首次出现：<a href="chapters/1-3-continuous-batching.html#concept">1.3 Continuous Batching</a></div>
+</div>
+<div class="gl-item">
+<div><span class="en">memory-bandwidth-bound</span><span class="zh">受显存带宽限制</span></div>
+<div class="desc">性能由数据搬运速度而非计算速度决定的状态。它解释了为什么批处理能几乎免费地提升吞吐。</div>
+<div class="ref">首次出现：<a href="chapters/1-5-speculative-decoding.html#concept">1.5 Speculative Decoding</a></div>
+</div>
+<div class="gl-item">
+<div><span class="en">model routing</span><span class="zh">模型路由</span></div>
+<div class="desc">按请求难度把流量分配到不同能力/价格档位的模型。收益上限由简单请求的占比决定。</div>
+<div class="ref">首次出现：<a href="chapters/2-3-model-routing.html#concept">2.3 模型分级与路由</a></div>
+</div>
+<div class="gl-item">
+<div><span class="en">multi-agent</span><span class="zh">多智能体</span></div>
+<div class="desc">多个 agent 分工协作的架构。收益来自并行探索与突破单一上下文容量，代价是每条通信边都是有损压缩。</div>
+<div class="ref">首次出现：<a href="chapters/4-4-multi-agent.html#concept">4.4 Multi-agent：何时是过度设计</a></div>
+</div>
+</div>
+<div class="gl-group" id="gl-N">
+<h2>N</h2>
+<div class="gl-item">
+<div><span class="en">non-parametric knowledge</span><span class="zh">非参数化知识</span></div>
+<div class="desc">存在外部可检索索引里的知识。可秒级更新、可溯源、可按权限过滤。</div>
+<div class="ref">首次出现：<a href="chapters/3-1-why-rag.html#concept">3.1 为什么需要 RAG</a></div>
+</div>
+</div>
+<div class="gl-group" id="gl-O">
+<h2>O</h2>
+<div class="gl-item">
+<div><span class="en">OOV</span><span class="zh">词表外</span></div>
+<div class="desc">out-of-vocabulary，输入中出现词表里没有的词。BPE 等子词方法通过回退到字节级编码消除了这一问题。</div>
+<div class="ref">首次出现：<a href="chapters/1-1-tokenization.html#concept">1.1 Tokenization 与 Context Window</a></div>
+</div>
+<div class="gl-item">
+<div><span class="en">outlier</span><span class="zh">离群值</span></div>
+<div class="desc">少数维度上比其余值大几个数量级的激活值。它会撑大量化范围、毁掉其余值的精度，是大模型量化的核心难点。</div>
+<div class="ref">首次出现：<a href="chapters/1-4-quantization.html#concept">1.4 量化 Quantization</a></div>
+</div>
+</div>
+<div class="gl-group" id="gl-P">
+<h2>P</h2>
+<div class="gl-item">
+<div><span class="en">PagedAttention</span><span class="zh">分页注意力</span></div>
+<div class="desc">借鉴操作系统虚拟内存的 KV cache 管理方式：切成固定大小的 block 按需分配，物理上不必连续。消除了预留浪费与外部碎片。</div>
+<div class="ref">首次出现：<a href="chapters/1-2-kv-cache.html#concept">1.2 KV Cache 与 PagedAttention</a></div>
+</div>
+<div class="gl-item">
+<div><span class="en">parameterized query</span><span class="zh">参数化查询</span></div>
+<div class="desc">SQL 中从语法层分离语句与数据的机制，它根治了 SQL 注入。LLM 缺少对应的结构，这正是 prompt injection 难以根治的原因。</div>
+<div class="ref">首次出现：<a href="chapters/6-2-prompt-injection.html#concept">6.2 Prompt Injection 与安全</a></div>
+</div>
+<div class="gl-item">
+<div><span class="en">parametric knowledge</span><span class="zh">参数化知识</span></div>
+<div class="desc">存在模型权重里的知识。稳定但无法快速更新、无法溯源、无法做权限区分。</div>
+<div class="ref">首次出现：<a href="chapters/3-1-why-rag.html#concept">3.1 为什么需要 RAG</a></div>
+</div>
+<div class="gl-item">
+<div><span class="en">pass^k</span><span class="zh">pass^k</span></div>
+<div class="desc">同一任务连续 k 次执行全部成功的概率，衡量一致性。它比单次成功率更能预测 agent 在生产中的可用性。</div>
+<div class="ref">首次出现：<a href="chapters/4-5-agent-eval.html#concept">4.5 Agent Evaluation</a></div>
+</div>
+<div class="gl-item">
+<div><span class="en">PEFT</span><span class="zh">参数高效微调</span></div>
+<div class="desc">parameter-efficient fine-tuning，只训练极少量参数即可完成任务适配的一类方法。</div>
+<div class="ref">首次出现：<a href="chapters/5-2-sft-peft.html#concept">5.2 SFT 与 PEFT 家族</a></div>
+</div>
+<div class="gl-item">
+<div><span class="en">preference alignment</span><span class="zh">偏好对齐</span></div>
+<div class="desc">利用「比较比生成容易」的不对称性来调整模型行为，适用于「什么算好」难以写成标准答案的场景。</div>
+<div class="ref">首次出现：<a href="chapters/5-4-alignment-and-validation.html#concept">5.4 偏好对齐与验证</a></div>
+</div>
+<div class="gl-item">
+<div><span class="en">prefill</span><span class="zh">预填充</span></div>
+<div class="desc">推理的第一阶段，一次性处理全部输入 token 并写入 KV cache。其 attention 计算量约为输入长度的二次方，是 TTFT 的主要来源。</div>
+<div class="ref">首次出现：<a href="chapters/1-1-tokenization.html#concept">1.1 Tokenization 与 Context Window</a></div>
+</div>
+<div class="gl-item">
+<div><span class="en">prefix caching</span><span class="zh">前缀缓存</span></div>
+<div class="desc">prompt caching 的底层实现名称。匹配是从第 0 个 token 开始的逐 token 精确前缀匹配。</div>
+<div class="ref">首次出现：<a href="chapters/2-2-prompt-caching.html#concept">2.2 Prompt Caching</a></div>
+</div>
+<div class="gl-item">
+<div><span class="en">prompt caching</span><span class="zh">提示词缓存</span></div>
+<div class="desc">复用相同前缀已算好的 KV，跳过其 prefill。降低 TTFT 与输入成本，但不影响 TPOT。</div>
+<div class="ref">首次出现：<a href="chapters/2-2-prompt-caching.html#concept">2.2 Prompt Caching</a></div>
+</div>
+<div class="gl-item">
+<div><span class="en">PTQ</span><span class="zh">训练后量化</span></div>
+<div class="desc">post-training quantization，对训练好的模型直接量化，成本低，是应用层的默认选择。</div>
+<div class="ref">首次出现：<a href="chapters/1-4-quantization.html#concept">1.4 量化 Quantization</a></div>
+</div>
+</div>
+<div class="gl-group" id="gl-Q">
+<h2>Q</h2>
+<div class="gl-item">
+<div><span class="en">QAT</span><span class="zh">量化感知训练</span></div>
+<div class="desc">quantization-aware training，训练中模拟量化误差，质量更好但需重新训练。</div>
+<div class="ref">首次出现：<a href="chapters/1-4-quantization.html#concept">1.4 量化 Quantization</a></div>
+</div>
+<div class="gl-item">
+<div><span class="en">QLoRA</span><span class="zh">量化低秩适配</span></div>
+<div class="desc">把冻结的基座量化到 4-bit 再训练 LoRA adapter，大幅降低显存门槛，使单卡微调大模型成为常规操作。</div>
+<div class="ref">首次出现：<a href="chapters/5-2-sft-peft.html#concept">5.2 SFT 与 PEFT 家族</a></div>
+</div>
+<div class="gl-item">
+<div><span class="en">quantization</span><span class="zh">量化</span></div>
+<div class="desc">用更少的比特表示模型参数。它省的主要是显存与带宽；能否加速取决于量化对象与 batch 大小。</div>
+<div class="ref">首次出现：<a href="chapters/1-4-quantization.html#concept">1.4 量化 Quantization</a></div>
+</div>
+</div>
+<div class="gl-group" id="gl-R">
+<h2>R</h2>
+<div class="gl-item">
+<div><span class="en">RadixAttention</span><span class="zh">基数树注意力</span></div>
+<div class="desc">用基数树自动组织并复用跨请求的公共前缀 KV，无需应用显式声明。</div>
+<div class="ref">首次出现：<a href="chapters/2-2-prompt-caching.html#concept">2.2 Prompt Caching</a></div>
+</div>
+<div class="gl-item">
+<div><span class="en">RAG</span><span class="zh">检索增强生成</span></div>
+<div class="desc">Retrieval-Augmented Generation。先检索外部知识再生成答案，把事实从权重里解耦出来。</div>
+<div class="ref">首次出现：<a href="chapters/3-1-why-rag.html#concept">3.1 为什么需要 RAG</a></div>
+</div>
+<div class="gl-item">
+<div><span class="en">ReAct</span><span class="zh">推理-行动交错</span></div>
+<div class="desc">把推理轨迹与行动交错生成的 agent 循环模式。推理帮助规划与纠错，行动带来外部信息。</div>
+<div class="ref">首次出现：<a href="chapters/4-2-planning-loop.html#concept">4.2 Planning Loop</a></div>
+</div>
+<div class="gl-item">
+<div><span class="en">RLHF</span><span class="zh">基于人类反馈的强化学习</span></div>
+<div class="desc">先拟合奖励模型、再用强化学习优化策略的两阶段对齐路径。</div>
+<div class="ref">首次出现：<a href="chapters/5-4-alignment-and-validation.html#concept">5.4 偏好对齐与验证</a></div>
+</div>
+<div class="gl-item">
+<div><span class="en">RRF</span><span class="zh">倒数排名融合</span></div>
+<div class="desc">Reciprocal Rank Fusion。只按排名而非分数融合多路检索结果，无需归一化与调权重。</div>
+<div class="ref">首次出现：<a href="chapters/3-3-hybrid-search-rerank.html#concept">3.3 Embedding、Hybrid Search 与 Rerank</a></div>
+</div>
+</div>
+<div class="gl-group" id="gl-S">
+<h2>S</h2>
+<div class="gl-item">
+<div><span class="en">selective batching</span><span class="zh">选择性批处理</span></div>
+<div class="desc">只对与序列长度无关的算子做批处理，attention 部分按序列单独处理。它让批内序列长度可以自由不同。</div>
+<div class="ref">首次出现：<a href="chapters/1-3-continuous-batching.html#concept">1.3 Continuous Batching</a></div>
+</div>
+<div class="gl-item">
+<div><span class="en">SFT</span><span class="zh">有监督微调</span></div>
+<div class="desc">supervised fine-tuning，用「输入-期望输出」样本对继续训练。适用于有明确对错标准的任务。</div>
+<div class="ref">首次出现：<a href="chapters/5-2-sft-peft.html#concept">5.2 SFT 与 PEFT 家族</a></div>
+</div>
+<div class="gl-item">
+<div><span class="en">speculative decoding</span><span class="zh">投机解码</span></div>
+<div class="desc">用便宜模型生成草稿、由目标模型一次性并行验证。输出分布与原模型严格相同，本质是用富余算力换延迟。</div>
+<div class="ref">首次出现：<a href="chapters/1-5-speculative-decoding.html#concept">1.5 Speculative Decoding</a></div>
+</div>
+<div class="gl-item">
+<div><span class="en">speculative execution</span><span class="zh">投机执行</span></div>
+<div class="desc">CPU 中先赌一个分支往下算、赌错则回滚的技术。投机解码借用了同一思想。</div>
+<div class="ref">首次出现：<a href="chapters/1-5-speculative-decoding.html#concept">1.5 Speculative Decoding</a></div>
+</div>
+<div class="gl-item">
+<div><span class="en">static batching</span><span class="zh">静态批处理</span></div>
+<div class="desc">攒够一批请求一起执行、等整批完成才换下一批。已完成的请求会占着槽位空转，长度方差越大浪费越严重。</div>
+<div class="ref">首次出现：<a href="chapters/1-3-continuous-batching.html#concept">1.3 Continuous Batching</a></div>
+</div>
+</div>
+<div class="gl-group" id="gl-T">
+<h2>T</h2>
+<div class="gl-item">
+<div><span class="en">time per output token</span><span class="zh">每 token 延迟 TPOT</span></div>
+<div class="desc">后续每个输出 token 的平均间隔，决定流畅度。快过用户阅读速度后再优化收益趋近于零。</div>
+<div class="ref">首次出现：<a href="chapters/2-1-latency-metrics.html#concept">2.1 延迟指标体系</a></div>
+</div>
+<div class="gl-item">
+<div><span class="en">time to first token</span><span class="zh">首字延迟 TTFT</span></div>
+<div class="desc">从发出请求到收到第一个 token 的时间，包含排队与 prefill。它是用户等待感的全部来源。</div>
+<div class="ref">首次出现：<a href="chapters/2-1-latency-metrics.html#concept">2.1 延迟指标体系</a></div>
+</div>
+<div class="gl-item">
+<div><span class="en">token</span><span class="zh">词元</span></div>
+<div class="desc">模型处理文本的基本单位，也是计费、上下文长度与延迟的计量单位。模型看到的不是字符，而是 token ID 序列。</div>
+<div class="ref">首次出现：<a href="chapters/1-1-tokenization.html#concept">1.1 Tokenization 与 Context Window</a></div>
+</div>
+<div class="gl-item">
+<div><span class="en">tokenizer</span><span class="zh">分词器</span></div>
+<div class="desc">把文本切成 token 并映射为整数 ID 的组件。不同模型的 tokenizer 互不通用，token 数必须用实际调用的模型来测。</div>
+<div class="ref">首次出现：<a href="chapters/1-1-tokenization.html#concept">1.1 Tokenization 与 Context Window</a></div>
+</div>
+<div class="gl-item">
+<div><span class="en">trace</span><span class="zh">调用链</span></div>
+<div class="desc">一次请求横跨检索、模型调用、工具调用等多个 span 的完整记录。每个 span 须带 token 数、成本与模型版本，否则无法归因。</div>
+<div class="ref">首次出现：<a href="chapters/6-1-observability.html#concept">6.1 可观测性</a></div>
+</div>
+</div>
+<div class="gl-group" id="gl-V">
+<h2>V</h2>
+<div class="gl-item">
+<div><span class="en">Value</span><span class="zh">值向量</span></div>
+<div class="desc">attention 机制中被加权求和的内容向量，与 Key 一同构成 KV cache。</div>
+<div class="ref">首次出现：<a href="chapters/1-2-kv-cache.html#concept">1.2 KV Cache 与 PagedAttention</a></div>
+</div>
+<div class="gl-item">
+<div><span class="en">virtual memory</span><span class="zh">虚拟内存</span></div>
+<div class="desc">操作系统让进程看到连续地址空间、而物理内存可以是碎片的机制。PagedAttention 把这套思想搬进了显存。</div>
+<div class="ref">首次出现：<a href="chapters/1-2-kv-cache.html#concept">1.2 KV Cache 与 PagedAttention</a></div>
+</div>
+</div>
+<div class="gl-group" id="gl-W">
+<h2>W</h2>
+<div class="gl-item">
+<div><span class="en">weight-only quantization</span><span class="zh">仅权重量化</span></div>
+<div class="desc">只压缩权重、计算时仍解压回高精度。在低并发场景提速明显，高并发下收益可能有限。</div>
+<div class="ref">首次出现：<a href="chapters/1-4-quantization.html#concept">1.4 量化 Quantization</a></div>
+</div>
+</div>
+<nav class="next">
+  <a href="appendix-a-tooling.html">← 附录 A 工具层速查</a>
+  <a href="appendix-c-interview-index.html">附录 C 面试题索引 →</a>
+</nav>
+
 </div>
 </body>
 </html>

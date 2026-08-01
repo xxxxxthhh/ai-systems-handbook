@@ -3,7 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>工具层速查 · AI 系统工程手册</title>
+<title>附录 A 工具层速查 · AI 系统工程手册</title>
+<meta name="description" content="推理框架、检索组件、微调工具链与可观测性工具的集中速查，每节标注截至日期。">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Noto+Sans+SC:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -15,15 +16,229 @@
   <span class="moon" aria-hidden="true">🌙</span><span class="sun" aria-hidden="true">☀️</span>
 </button>
 <div class="wrap">
-<nav class="crumb"><a href="index.html">← 目录</a> · 附录</nav>
+
+<nav class="crumb"><a href="index.html">← 目录</a> · 附录 A</nav>
+
 <header class="ch">
+  <div class="blockrow" aria-hidden="true">
+    <span class="f"></span><span class="f"></span><span class="w"></span><span class="w"></span><span class="w"></span>
+    <span class="w"></span><span class="w"></span><span class="f"></span><span class="f"></span><span class="f"></span>
+  </div>
   <div class="kicker">Appendix A</div>
-  <h1>工具层速查<span class="zh">Tooling Quick Reference</span></h1>
+  <h1>Tooling Quick Reference
+    <span class="zh">工具层速查</span>
+  </h1>
+  <div class="meta">
+    <span>性质 <b>会过期，允许过期</b></span>
+    <span>正文 <b>不依赖本附录</b></span>
+  </div>
 </header>
-<section>
-  <div class="sec-tag"><span class="cell" style="background:var(--free)"></span><span class="lab">Draft 待撰写</span></div>
-  <p>本附录尚未撰写。返回<a href="index.html">全书目录</a>。</p>
+
+<section style="margin-top:40px">
+  <div class="callout">
+    <p><b>怎么读这一页。</b>本书把知识分成两层（<a href="chapters/0-1-how-to-read.html#s02">0.2</a>）：<b>原理层</b>写进正文，<b>工具层</b>集中在这里和各章的虚线侧栏。这一页的全部内容都会过期——<b>这是设计，不是缺陷</b>。它的存在是为了让正文能长期保持稳定，把易变的部分隔离在一处、低成本更新。</p>
+    <p>每一节都标注了「截至 YYYY-MM」。<b>如果日期距今已久，请默认它已经过期</b>；具体参数与价格一律以官方文档为准。本页不给任何价格数字——价格是变化最快的一类信息，写进来只会误导。</p>
+  </div>
 </section>
+
+<!-- ============ A.1 推理服务 ============ -->
+<section id="a1">
+  <div class="sec-tag"><span class="cell"></span><span class="lab">A.1 · Inference Serving 推理服务</span></div>
+  <h2>推理框架</h2>
+  <div class="toolbox">
+    <div class="toolbox-head">
+      <span class="t">自托管推理框架对照</span>
+      <span class="date">截至 2026-08</span>
+    </div>
+    <div class="toolbox-body">
+      <div class="tbl-scroll">
+      <table>
+        <thead><tr><th>框架</th><th>特点</th><th>适合</th></tr></thead>
+        <tbody>
+          <tr><td><b>vLLM</b></td><td>PagedAttention 的出处与参考实现；生态最广，社区活跃</td><td>大多数自托管场景的默认选择</td></tr>
+          <tr><td><b>SGLang</b></td><td>RadixAttention 自动跨请求前缀复用；结构化输出支持好</td><td>多轮对话、few-shot、前缀共享度高的负载</td></tr>
+          <tr><td><b>TensorRT-LLM</b></td><td>NVIDIA 硬件上的 kernel 级优化</td><td>确定用 NVIDIA 硬件且追求极致性能</td></tr>
+          <tr><td><b>TGI</b></td><td>HuggingFace 生态集成度高</td><td>已深度使用 HF 工具链的团队</td></tr>
+          <tr><td><b>llama.cpp / Ollama</b></td><td>CPU 与端侧推理，GGUF 格式</td><td>本地开发、离线部署、消费级硬件</td></tr>
+        </tbody>
+      </table>
+      </div>
+      <p><b>共同点</b>：连续批处理（<a href="chapters/1-3-continuous-batching.html">1.3</a>）与分页 KV cache（<a href="chapters/1-2-kv-cache.html">1.2</a>）均已是标配，无需手动开启。</p>
+    </div>
+  </div>
+
+  <div class="toolbox">
+    <div class="toolbox-head">
+      <span class="t">最常调的几个参数（以 vLLM 命名为例）</span>
+      <span class="date">截至 2026-08</span>
+    </div>
+    <div class="toolbox-body">
+      <p><code>--gpu-memory-utilization</code>：控制可用于 KV cache 的显存上限。OOM 时调低，并发不足时调高。</p>
+      <p><code>--max-num-seqs</code>：批内最大并发序列数，控并发上限。</p>
+      <p><code>--max-num-batched-tokens</code>：单次迭代的 token 预算，同时影响 prefill 切块大小。它是 <b>TTFT 与 TPOT 平衡的主要手柄</b>（<a href="chapters/2-1-latency-metrics.html">2.1</a>）。</p>
+      <p><code>--enable-prefix-caching</code>：开启自动前缀缓存（<a href="chapters/2-2-prompt-caching.html">2.2</a>）。</p>
+      <p><code>--block-size</code>：KV cache 分页块大小，通常无需改动。</p>
+      <p><b>调参前先明确瓶颈</b>：是显存受限还是算力受限（<a href="chapters/2-4-capacity-planning.html">2.4</a>）。方向搞错时，任何参数都调不出效果。</p>
+    </div>
+  </div>
+
+  <div class="toolbox">
+    <div class="toolbox-head">
+      <span class="t">量化格式选型</span>
+      <span class="date">截至 2026-08</span>
+    </div>
+    <div class="toolbox-body">
+      <div class="tbl-scroll">
+      <table>
+        <thead><tr><th>格式</th><th>量化对象</th><th>适用</th></tr></thead>
+        <tbody>
+          <tr><td><b>GPTQ / AWQ</b></td><td>仅权重，4-bit</td><td>显存受限；社区有大量预量化权重可直接下载</td></tr>
+          <tr><td><b>FP8</b></td><td>权重 + 激活</td><td>较新硬件（Hopper 及之后）；<b>高并发服务端唯一能真正吃到低精度算力的路线</b></td></tr>
+          <tr><td><b>GGUF（Q4_K_M 等）</b></td><td>仅权重，多档位</td><td>本地 / CPU / 端侧；2-bit 档位质量风险明显</td></tr>
+          <tr><td><b>KV cache 量化（FP8/INT8）</b></td><td>KV cache</td><td>与权重量化正交可叠加；<b>直接放大并发上限，性价比常被低估</b></td></tr>
+        </tbody>
+      </table>
+      </div>
+      <p><b>选型顺序</b>：先问「是显存装不下，还是速度不够？」显存问题 → 4-bit 仅权重 + KV cache 量化；速度问题且硬件支持 → FP8。<b>无论选哪条，都必须在自己的 eval 集上跑回归</b>（<a href="chapters/1-4-quantization.html">1.4</a>、<a href="chapters/6-4-eval-pipeline.html">6.4</a>）。</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============ A.2 检索 ============ -->
+<section id="a2">
+  <div class="sec-tag"><span class="cell" style="background:var(--waste)"></span><span class="lab">A.2 · Retrieval 检索组件</span></div>
+  <h2>RAG 技术栈</h2>
+  <div class="toolbox">
+    <div class="toolbox-head">
+      <span class="t">向量存储选型</span>
+      <span class="date">截至 2026-08</span>
+    </div>
+    <div class="toolbox-body">
+      <p><b>已有关系型数据库、数据量百万级以内</b> → 优先用现有数据库的向量扩展（PostgreSQL + pgvector、Elasticsearch / OpenSearch）。省掉一整套运维，且<b>天然支持与业务字段的联合过滤</b>（权限、时间范围）——这恰恰是纯向量库的弱项，也是企业场景的刚需。</p>
+      <p><b>规模更大或需要专门能力</b> → Qdrant、Weaviate、Milvus 等专用向量库，或对应的托管服务。</p>
+      <p><b>已有 Elasticsearch / OpenSearch</b> → 混合检索几乎是免费的：BM25 与向量检索原生共存，且内置 RRF 融合（<a href="chapters/3-3-hybrid-search-rerank.html">3.3</a>）。这通常优于引入新组件。</p>
+      <p><b>选型必查的一项</b>：<b>元数据过滤能力</b>。权限、时间范围、文档类型的过滤必须能在检索层完成，而不是召回后再筛（后者会导致「过滤完不够 k 条」）。</p>
+    </div>
+  </div>
+
+  <div class="toolbox">
+    <div class="toolbox-head">
+      <span class="t">Embedding 与 Rerank 模型</span>
+      <span class="date">截至 2026-08</span>
+    </div>
+    <div class="toolbox-body">
+      <p><b>Embedding</b>：开源侧有 BGE、E5、GTE 等系列（含多语言版本），闭源侧各厂商均有对应 API。</p>
+      <p><b>选型看三点，都不是榜单排名</b>：① <b>是否支持你的语言与领域</b>；② <b>向量维度</b>（直接决定存储与检索成本，高维不总是更好）；③ <b>最大输入长度</b>必须 ≥ 你的 chunk 大小——<b>超出会被静默截断，这是一个极隐蔽的 bug</b>。</p>
+      <p><b>Rerank</b>：开源侧 BGE-reranker 等，闭源侧多家提供 rerank API。延迟与候选数成正比，<b>务必计入 TTFT 预算</b>。</p>
+      <p><b>两条硬提醒</b>：<br>① <b>公开榜单分数对你的领域可能无参考价值</b>——BEIR 一类工作表明稠密检索的跨领域泛化有明显折损（<a href="chapters/3-3-hybrid-search-rerank.html">3.3</a>），必须在自己的数据上重测。<br>② <b>换 embedding 模型 = 全量重建索引</b>，不同模型的向量空间不通用。选型时就要把这笔迁移成本算进去。</p>
+    </div>
+  </div>
+
+  <div class="toolbox">
+    <div class="toolbox-head">
+      <span class="t">切分与解析</span>
+      <span class="date">截至 2026-08</span>
+    </div>
+    <div class="toolbox-body">
+      <p><b>起点配置</b>：结构感知切分优先；无结构文档退回固定长度，chunk 取 256–512 token、重叠 10–20%。<b>按 token 数切，不要按字符数切</b>（中英文比例差异极大）。</p>
+      <p><b>PDF 解析是最大的坑</b>：多栏排版、页眉页脚、跨页表格、扫描件。<b>解析质量往往比切分策略更能决定 RAG 效果</b>——上线前务必肉眼检查解析后的纯文本。</p>
+      <p><b>框架默认值不可信</b>：各编排框架的默认 splitter 是为通用场景选的。<b>至少把切分结果抽样打印几十条看一遍</b>，这是五分钟避免一整类线上问题的检查（<a href="chapters/3-2-chunking.html">3.2</a>）。</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============ A.3 微调 ============ -->
+<section id="a3">
+  <div class="sec-tag"><span class="cell" style="background:var(--free)"></span><span class="lab">A.3 · Fine-tuning 微调工具链</span></div>
+  <h2>训练与数据</h2>
+  <div class="toolbox">
+    <div class="toolbox-head">
+      <span class="t">微调框架</span>
+      <span class="date">截至 2026-08</span>
+    </div>
+    <div class="toolbox-body">
+      <div class="tbl-scroll">
+      <table>
+        <thead><tr><th>工具</th><th>特点</th><th>适合</th></tr></thead>
+        <tbody>
+          <tr><td><b>Axolotl</b></td><td>YAML 配置驱动，覆盖 SFT / LoRA / QLoRA / DPO，社区配置丰富</td><td>「照着已验证配置改」的团队</td></tr>
+          <tr><td><b>Unsloth</b></td><td>速度与显存优化见长，notebook 开箱即用</td><td>单卡场景、快速可行性验证</td></tr>
+          <tr><td><b>LLaMA-Factory</b></td><td>模型覆盖广、带 Web UI，中文社区活跃</td><td>快速试多个基座</td></tr>
+          <tr><td><b>peft + trl + bitsandbytes</b></td><td>底层组件，最大灵活性</td><td><b>建议至少手写一次训练脚本</b></td></tr>
+        </tbody>
+      </table>
+      </div>
+      <p><b>LoRA 起点配置</b>：<code>r=16, alpha=32</code>（保持 α/r = 2），adapter 加在注意力全部投影 q/k/v/o 加 MLP。调参顺序：<b>先固定 α/r 扫 r，r 定了再调学习率</b>——同时改两个耦合参数，得到的结论没有意义（<a href="chapters/5-2-sft-peft.html">5.2</a>）。</p>
+      <p><b>最容易出错且最难发现的两处</b>：<b>chat template</b> 必须与推理时完全一致（差一个特殊 token 都显著影响效果）；<b>loss mask</b> 通常只应计算在助手回复部分。<b>这两处配错时训练照常完成、loss 曲线正常，只是效果莫名其妙地差</b>——排查时优先检查它们。</p>
+      <p><b>部署</b>：vLLM、SGLang 支持直接加载 LoRA adapter 并<b>多 adapter 动态切换</b>（一个基座服务多个任务），这是 LoRA 相对全量微调最实际的生产优势。</p>
+    </div>
+  </div>
+
+  <div class="toolbox">
+    <div class="toolbox-head">
+      <span class="t">数据处理</span>
+      <span class="date">截至 2026-08</span>
+    </div>
+    <div class="toolbox-body">
+      <p><b>去重</b>：<code>datasketch</code>（MinHash LSH）做大规模近似去重。<b>务必抽样看一眼被判为重复的样本对</b>，阈值过松会误删有价值的多样性。</p>
+      <p><b>数据集管理</b>：HuggingFace <code>datasets</code> + 版本管理（DVC 或带哈希的对象存储）。<b>「哪个模型是用哪版数据训的」必须可追溯。</b></p>
+      <p><b>合成数据</b>：Distilabel、各家批处理 API（通常有明显折扣）。生成时注意提高多样性——同一 prompt 反复生成会得到高度相似的样本，去重后所剩无几。</p>
+      <p><b>两条合规前置项</b>（应在数据管线第一步做，而非事后补）：① 用商业模型输出训练模型前<b>核对该服务的使用条款</b>；② 生产日志中的<b>个人信息脱敏</b>。</p>
+      <p><b>最有价值却最常被跳过的一步</b>：<b>人工通读 100 条最终训练样本</b>。半天工作量，几乎每次都能发现自动化流程漏掉的系统性问题（<a href="chapters/5-3-data-engineering.html">5.3</a>）。</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============ A.4 生产 ============ -->
+<section id="a4">
+  <div class="sec-tag"><span class="cell"></span><span class="lab">A.4 · Production 生产工具</span></div>
+  <h2>可观测性、评估与可靠性</h2>
+  <div class="toolbox">
+    <div class="toolbox-head">
+      <span class="t">可观测性与评估</span>
+      <span class="date">截至 2026-08</span>
+    </div>
+    <div class="toolbox-body">
+      <p><b>LLM 可观测性平台</b>：Langfuse（开源可自托管）、LangSmith、Braintrust、Arize Phoenix、Helicone。核心价值是省掉自建 trace 存储与 UI。</p>
+      <p><b>已有成熟可观测性栈的团队</b>：用 OpenTelemetry 把 LLM 调用作为 span 接进现有系统，通常优于引入独立平台——<b>LLM 调用只是系统的一环，割裂成监控孤岛会让端到端排查更难</b>。</p>
+      <p><b>评估框架</b>：promptfoo（轻量、配置驱动，适合接 CI）、DeepEval、RAGAS（RAG 专用指标）、以及上述平台自带的评估编排。</p>
+      <p><b>使用 LLM-as-judge 的前提</b>：<b>必须先用 50–100 条人工标注校准一致率</b>，且评委模型或 prompt 变更后要重测。优先用<b>二元判定</b>而非 1–10 打分；<b>能程序判定的（JSON 合法性、引用是否存在、枚举值）一律用代码</b>（<a href="chapters/6-4-eval-pipeline.html">6.4</a>）。</p>
+    </div>
+  </div>
+
+  <div class="toolbox">
+    <div class="toolbox-head">
+      <span class="t">网关、可靠性与安全</span>
+      <span class="date">截至 2026-08</span>
+    </div>
+    <div class="toolbox-body">
+      <p><b>LLM 网关</b>：LiteLLM、Portkey、Cloudflare AI Gateway——统一接口、自动重试、多供应商回退、限流与缓存。<b>注意它本身也是一个新的单点</b>，需要高可用设计，否则只是把故障点搬了个家。</p>
+      <p><b>弹性库</b>：Python 的 tenacity、Java 的 Resilience4j 等。<b>不要手写重试逻辑</b>——退避、抖动、错误分类、熔断状态机都有成熟实现，手写极易漏掉抖动或重试了不该重试的错误。</p>
+      <p><b>生产环境模型标识</b>：<b>一律使用带版本后缀的具体标识，绝不用 latest 别名</b>；并把模型版本记进 trace（<a href="chapters/6-5-degradation-fallback.html">6.5</a>）。</p>
+      <p><b>安全</b>：OWASP Top 10 for LLM Applications 可作为安全评审的检查清单起点。注入检测分类器（Llama Guard、Rebuff 等）是<b>纵深防御的一层，不是安全边界</b>——真正的边界在执行侧的权限控制（<a href="chapters/6-2-prompt-injection.html">6.2</a>）。</p>
+      <p><b>约束解码 / 结构化输出</b>：Outlines、XGrammar，以及 vLLM / SGLang 内置的语法约束；商业 API 普遍提供 structured outputs 或严格模式。<b>凡是「格式不稳定」的问题，先用它解决，不要用微调。</b></p>
+    </div>
+  </div>
+</section>
+
+<!-- ============ A.5 更新约定 ============ -->
+<section id="a5">
+  <div class="sec-tag"><span class="cell" style="background:var(--free)"></span><span class="lab">A.5 · Maintenance 本页的维护约定</span></div>
+  <h2>这一页该怎么更新</h2>
+  <p>把易变内容集中在这里，是为了让更新成本可控。维护时遵循三条：</p>
+  <p><b>① 只改这里和侧栏，不动正文。</b>如果某次工具更新让你觉得<b>正文</b>需要改，那通常说明当初有一句原理层内容被写进了工具层判断，或反之——这时应该回头修正分层，而不是顺手改正文。</p>
+  <p><b>② 更新时同步日期戳。</b>日期戳的意义是<b>让读者有理由怀疑它</b>。没改内容就不要改日期——虚假的新鲜度比明确的陈旧更有害。</p>
+  <p><b>③ 不写价格、不写具体版本号。</b>它们的变化速度远快于本书的更新周期，写进来必然误导。成本相关内容一律给<b>计算方法与假设</b>（<a href="chapters/2-4-capacity-planning.html">2.4</a>），让读者代入自己拿到的报价重算。</p>
+  <div class="callout">
+    <p><b>如果你在很久之后读到这一页</b>：具体的工具名可能已经换了一轮，但选型时要问的问题大概率没变——<b>瓶颈是显存还是算力？收益是延迟还是吞吐？这个判断能程序化吗？换掉它的迁移成本有多大？</b>这些问题属于正文，它们比本页的任何一个工具名活得更久。</p>
+  </div>
+</section>
+
+<nav class="next">
+  <a href="chapters/6-5-degradation-fallback.html">← 6.5 Degradation 与 Fallback</a>
+  <a href="glossary.html">附录 B 术语表 →</a>
+</nav>
+
 </div>
 </body>
 </html>
