@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>1.2 KV Cache 与 PagedAttention · AI 系统工程手册</title>
+<meta name="description" content="为什么自回归生成需要 KV cache、显存怎么被浪费、PagedAttention 的分页思想。">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Noto+Sans+SC:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/handbook.css">
+<script src="../assets/theme.js"></script>
+</head>
+<body>
+<button class="theme-toggle" type="button" aria-label="切换深色/浅色模式" title="切换深色/浅色模式">
+  <span class="moon" aria-hidden="true">🌙</span><span class="sun" aria-hidden="true">☀️</span>
+</button>
+<div class="wrap">
+
+<nav class="crumb"><a href="../index.html">← 目录</a> · Part 1 推理基础</nav>
+
+<header class="ch">
+  <div class="blockrow" aria-hidden="true">
+    <span></span><span></span><span></span><span></span><span></span><span></span>
+    <span class="w"></span><span class="w"></span><span class="f"></span><span class="f"></span>
+  </div>
+  <div class="kicker">Part 1 · Inference Fundamentals 推理基础</div>
+  <h1>1.2 KV Cache &amp; PagedAttention
+    <span class="zh">键值缓存，与像操作系统一样管理显存</span>
+  </h1>
+  <div class="meta">
+    <span>难度 <b>★★☆</b></span>
+    <span>阅读 <b>~15 min</b></span>
+    <span>面试出现频率 <b>极高</b></span>
+    <span>前置 <b>1.1 Tokenization</b></span>
+  </div>
+</header>
+
+<!-- ================= 核心概念 ================= -->
+<section id="concept">
+  <div class="sec-tag"><span class="cell"></span><span class="lab">Core Concept 核心概念</span></div>
+  <h2>为什么需要 KV Cache</h2>
+
+  <p>LLM 生成文本是<span class="term">autoregressive</span>（自回归）的：每次只生成一个 token，然后把它拼回输入，再生成下一个。问题在于 attention 的计算方式——生成第 100 个 token 时，它需要和前面全部 99 个 token 的 <span class="term">Key</span> 和 <span class="term">Value</span> 向量做注意力计算。如果每一步都从头重算这 99 个 token 的 K/V，那么生成 <i>n</i> 个 token 的总计算量是 O(n²) 级别的重复劳动——而这些 K/V 在数学上<b>完全没有变过</b>。</p>
+
+  <p>KV cache（键值缓存）就是这个朴素的优化：算过的 K/V 存进显存，下一步直接复用。每生成一个新 token，只为它这一个 token 算 K/V，追加到缓存末尾。代价是——这份缓存要一直占着显存，而且随序列变长线性增长。</p>
+
+  <figure>
+    <svg viewBox="0 0 760 210" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="KV cache 随生成步数增长示意图">
+      <!-- step 1 -->
+      <text x="20" y="40" class="lbl">Step 1</text>
+      <text x="20" y="58" class="sub">prompt 预填充</text>
+      <g>
+        <rect x="150" y="26" width="34" height="34" rx="4" fill="var(--alloc)"/>
+        <rect x="188" y="26" width="34" height="34" rx="4" fill="var(--alloc)"/>
+        <rect x="226" y="26" width="34" height="34" rx="4" fill="var(--alloc)"/>
+        <rect x="264" y="26" width="34" height="34" rx="4" fill="var(--alloc-soft)" stroke="var(--alloc)" stroke-dasharray="4 3"/>
+        <text x="281" y="48" text-anchor="middle" class="mn" fill="var(--alloc)">new</text>
+      </g>
+      <text x="320" y="48" class="mn">prompt 的 K/V 一次算好，写入缓存</text>
+      <!-- step 2 -->
+      <text x="20" y="110" class="lbl">Step 2</text>
+      <g>
+        <rect x="150" y="96" width="34" height="34" rx="4" fill="var(--alloc)"/>
+        <rect x="188" y="96" width="34" height="34" rx="4" fill="var(--alloc)"/>
+        <rect x="226" y="96" width="34" height="34" rx="4" fill="var(--alloc)"/>
+        <rect x="264" y="96" width="34" height="34" rx="4" fill="var(--alloc)"/>
+        <rect x="302" y="96" width="34" height="34" rx="4" fill="var(--alloc-soft)" stroke="var(--alloc)" stroke-dasharray="4 3"/>
+        <text x="319" y="118" text-anchor="middle" class="mn" fill="var(--alloc)">new</text>
+      </g>
+      <text x="358" y="118" class="mn">只为上一步的新 token 计算 K/V</text>
+      <!-- step 3 -->
+      <text x="20" y="180" class="lbl">Step 3</text>
+      <g>
+        <rect x="150" y="166" width="34" height="34" rx="4" fill="var(--alloc)"/>
+        <rect x="188" y="166" width="34" height="34" rx="4" fill="var(--alloc)"/>
+        <rect x="226" y="166" width="34" height="34" rx="4" fill="var(--alloc)"/>
+        <rect x="264" y="166" width="34" height="34" rx="4" fill="var(--alloc)"/>
+        <rect x="302" y="166" width="34" height="34" rx="4" fill="var(--alloc)"/>
+        <rect x="340" y="166" width="34" height="34" rx="4" fill="var(--alloc-soft)" stroke="var(--alloc)" stroke-dasharray="4 3"/>
+        <text x="357" y="188" text-anchor="middle" class="mn" fill="var(--alloc)">new</text>
+      </g>
+      <text x="396" y="188" class="mn">缓存随序列长度线性增长 →</text>
+    </svg>
+    <figcaption><b>图 1 · KV cache 的增长方式。</b>实心蓝块 = 已缓存的 K/V；虚线块 = 本步新计算的 K/V。计算从「每步重算全部」降为「每步只算一个」，代价是显存占用随序列线性增长。</figcaption>
+  </figure>
+
+  <h3>它到底占多少显存？</h3>
+  <p>每个 token 的 KV cache 大小是一个可以手算的数字，这也是面试里最常被要求现场推导的公式：</p>
+
+  <div class="formula">per-token KV bytes = 2 (K和V) × n_layers × hidden_size × bytes_per_param<br><br>以 OPT-13B (FP16) 为例：2 × 40 层 × 5120 维 × 2 bytes ≈ <b>800 KB / token</b><br>单条请求跑满 2048 token 上下文 ≈ <b>1.6 GB</b></div>
+
+  <p>800 KB——一个 token。一张 A100-40GB 装下 13B 模型的 FP16 权重（约 26 GB）之后，剩下的显存大部分都要让给 KV cache。这意味着<b>能同时服务多少条请求，瓶颈往往不是算力，而是 KV cache 能塞下多少</b>。这就是为什么显存管理从一个实现细节变成了推理系统的核心命题。</p>
+</section>
+
+<!-- ================= 问题 ================= -->
+<section id="waste">
+  <div class="sec-tag"><span class="cell" style="background:var(--waste)"></span><span class="lab">The Problem 浪费从哪来</span></div>
+  <h2>60–80% 的 KV 显存曾经是浪费掉的</h2>
+
+  <p>2023 年之前的主流推理框架为每条请求<b>预分配一段连续显存</b>，长度按「最大可能序列长度」（比如 2048）切好。这个决定带来三种浪费：</p>
+
+  <p><b>① 内部碎片 (internal fragmentation)</b>——请求实际只生成了 300 个 token，但按 2048 预留的那段空间里，剩下 1700 多个 token 的位置从头到尾没被用过。<b>② 预留浪费 (reservation)</b>——序列还没长到那里，但空间已经被锁定，别的请求用不了。<b>③ 外部碎片 (external fragmentation)</b>——不同请求的预分配块大小不一，释放后在显存里留下大量塞不进新请求的缝隙。</p>
+
+  <figure>
+    <svg viewBox="0 0 760 250" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="连续预分配与分页分配的显存利用对比">
+      <text x="20" y="28" class="lbl">连续预分配（vLLM 之前）</text>
+      <!-- request A -->
+      <rect x="20" y="42" width="150" height="36" rx="4" fill="var(--alloc)"/>
+      <rect x="170" y="42" width="180" height="36" rx="4" fill="var(--waste)"/>
+      <text x="30" y="65" class="onfill">Req A 已用</text>
+      <text x="180" y="65" class="onfill">预留但未用</text>
+      <!-- gap -->
+      <rect x="350" y="42" width="46" height="36" rx="4" fill="var(--free)"/>
+      <!-- request B -->
+      <rect x="396" y="42" width="90" height="36" rx="4" fill="var(--alloc)"/>
+      <rect x="486" y="42" width="200" height="36" rx="4" fill="var(--waste)"/>
+      <text x="406" y="65" class="onfill">Req B</text>
+      <text x="496" y="65" class="onfill">预留但未用</text>
+      <rect x="686" y="42" width="54" height="36" rx="4" fill="var(--free)"/>
+      <text x="20" y="102" class="sub">橙色 = 锁定但没装任何数据的显存；灰色 = 碎片缝隙，塞不进新请求 → 实际有效利用率只有 20–40%</text>
+
+      <text x="20" y="146" class="lbl">PagedAttention 分页分配</text>
+      <!-- paged blocks -->
+      <g>
+        <rect x="20"  y="160" width="42" height="36" rx="4" fill="var(--alloc)"/><text x="41" y="183" text-anchor="middle" class="onfill">A0</text>
+        <rect x="66"  y="160" width="42" height="36" rx="4" fill="var(--alloc)"/><text x="87" y="183" text-anchor="middle" class="onfill">B0</text>
+        <rect x="112" y="160" width="42" height="36" rx="4" fill="var(--alloc)"/><text x="133" y="183" text-anchor="middle" class="onfill">A1</text>
+        <rect x="158" y="160" width="42" height="36" rx="4" fill="var(--free)"/><text x="179" y="183" text-anchor="middle" class="mn">free</text>
+        <rect x="204" y="160" width="42" height="36" rx="4" fill="var(--alloc)"/><text x="225" y="183" text-anchor="middle" class="onfill">B1</text>
+        <rect x="250" y="160" width="42" height="36" rx="4" fill="var(--alloc)"/><text x="271" y="183" text-anchor="middle" class="onfill">A2</text>
+        <rect x="296" y="160" width="42" height="36" rx="4" fill="var(--free)"/><text x="317" y="183" text-anchor="middle" class="mn">free</text>
+        <rect x="342" y="160" width="42" height="36" rx="4" fill="var(--alloc)"/><text x="363" y="183" text-anchor="middle" class="onfill">C0</text>
+        <rect x="388" y="160" width="42" height="36" rx="4" fill="var(--alloc-soft)" stroke="var(--alloc)"/><text x="409" y="183" text-anchor="middle" class="mn">A3½</text>
+        <rect x="434" y="160" width="42" height="36" rx="4" fill="var(--free)"/><text x="455" y="183" text-anchor="middle" class="mn">free</text>
+      </g>
+      <text x="20" y="222" class="sub">按固定大小的 block（如 16 token）按需分配，物理上不必连续；唯一的浪费是每条序列最后一个没填满的 block（浅蓝）</text>
+    </svg>
+    <figcaption><b>图 2 · 两种分配方式的显存利用对比。</b>上：连续预分配，橙色区域被锁定却装不了任何数据。下：分页分配，A/B/C 三条请求的 block 交错存放，浪费只剩每条序列的最后半个 block。</figcaption>
+  </figure>
+
+  <h2 style="margin-top:48px">PagedAttention：把操作系统的答案抄过来</h2>
+  <p>操作系统在几十年前就解决过一模一样的问题——进程要「看起来连续」的内存，物理内存却是碎的。答案是<span class="term">virtual memory</span>（虚拟内存）+ 分页。<span class="term">PagedAttention</span> 把这套机制搬进了显存：</p>
+
+  <p>KV cache 被切成固定大小的 <span class="term">block</span>（vLLM 默认 16 个 token 一块）。每条请求维护一张 <span class="term">block table</span>（块表），记录「逻辑上的第 N 块」实际存放在哪个物理块——物理块可以散落在显存任何位置。序列增长时按需领取新块，请求结束立刻归还。三种浪费里，外部碎片和预留浪费被直接消灭，内部碎片被压缩到「最后一个未填满的 block」，不到 4%。</p>
+
+  <p>分页还带来一个意外的礼物：<b>共享</b>。同一个 prompt 发起的多路并行采样（parallel sampling）、beam search 的公共前缀，可以让多条序列的块表指向同一批物理块，配合<span class="term">copy-on-write</span>（写时复制）机制，共享的前缀只存一份。这是后来 prefix caching（前缀缓存）一系列优化的地基。</p>
+</section>
+
+<!-- ================= 案例 ================= -->
+<section id="case">
+  <div class="sec-tag"><span class="cell" style="background:var(--waste)"></span><span class="lab">Case Study 真实案例</span></div>
+  <h2>vLLM：一篇论文如何改写整个推理生态</h2>
+
+  <div class="case">
+    <div class="case-head"><span class="cell"></span>Efficient Memory Management for LLM Serving (SOSP 2023)</div>
+    <div class="case-body">
+      <p>UC Berkeley 团队在论文里给出的测量：当时的主流系统（FasterTransformer、Orca 等）中，KV cache 显存里真正装着有效 token 数据的比例只有约 20%–38%——其余全部是上文三种浪费。引入 PagedAttention 后：</p>
+      <div class="stats">
+        <div class="stat"><div class="n bad">60–80%</div><div class="l">改造前：KV 显存的浪费比例</div></div>
+        <div class="stat"><div class="n good">&lt; 4%</div><div class="l">改造后：仅剩末块内部碎片</div></div>
+        <div class="stat"><div class="n good">2–4×</div><div class="l">同延迟下的吞吐提升（vs 当时 SOTA）</div></div>
+        <div class="stat"><div class="n good">16</div><div class="l">默认 block 大小（token 数）</div></div>
+      </div>
+      <p>浪费的显存被释放出来意味着<b>同样的卡能塞下更长的批次</b>——吞吐提升不是来自算得更快，而是来自「一批能同时跑更多序列」。这个案例最值得记住的一点是：2–4 倍的性能提升里<b>没有任何一行 CUDA kernel 的算力优化</b>，纯粹来自内存管理策略的改变。vLLM 随后开源，PagedAttention 成为几乎所有主流推理框架的标配。</p>
+      <div class="src">来源：Kwon et al., "Efficient Memory Management for Large Language Model Serving with PagedAttention", SOSP 2023. 数字均引自论文；示意图为本书重绘。</div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 工具层 ================= -->
+<section id="tools">
+  <div class="sec-tag"><span class="cell" style="background:var(--free)"></span><span class="lab">Tooling Sidebar 工具层</span></div>
+  <div class="toolbox">
+    <div class="toolbox-head">
+      <span class="t">当前生态速查（会过期，正文不依赖本区块）</span>
+      <span class="date">截至 2026-08</span>
+    </div>
+    <div class="toolbox-body">
+      <p><b>vLLM</b>：PagedAttention 的出处与参考实现，生产环境最常见的开源选择；<code>--block-size</code> 可调块大小，<code>--gpu-memory-utilization</code> 控制 KV cache 可用显存上限。</p>
+      <p><b>SGLang</b>：在分页基础上引入 RadixAttention，用基数树自动做跨请求的前缀共享，多轮对话 / few-shot 场景收益明显。</p>
+      <p><b>TensorRT-LLM / TGI</b>：均已内置 paged KV cache；TensorRT-LLM 在 NVIDIA 硬件上通常有额外的 kernel 级优化。</p>
+      <p><b>KV cache 量化</b>：FP8 / INT8 KV cache 已在主流框架落地，与分页正交，可叠加使用（进一步讨论见 <a href="1-4-quantization.html">1.4 量化</a>）。</p>
+    </div>
+  </div>
+</section>
+
+<!-- ================= Quiz ================= -->
+<section id="quiz">
+  <div class="sec-tag"><span class="cell"></span><span class="lab">Quiz 自测</span></div>
+  <h2>章末自测</h2>
+  <div class="quiz">
+
+    <details>
+      <summary><span class="qtype">计算题</span>一个 32 层、hidden_size 4096 的模型以 FP16 服务，每个 token 的 KV cache 是多少？一条 4K 上下文的请求峰值占多少？</summary>
+      <div class="answer">
+        <p>套用公式：2 × 32 × 4096 × 2 bytes = 524,288 bytes ≈ <b>512 KB / token</b>。4096 token 的请求峰值 ≈ <b>2 GB</b>。</p>
+        <p>进阶追问（面试常见）：如果这个模型用了 <span class="term">GQA</span>（分组查询注意力），比如 32 个 query head 只配 8 个 KV head，上面的数字要乘以 8/32——KV cache 直接降到 1/4。这正是现代开源模型几乎全部采用 GQA 的核心原因之一：它省的不是算力，是 KV 显存。</p>
+      </div>
+    </details>
+
+    <details>
+      <summary><span class="qtype">概念题</span>为什么 KV cache 的占用随 batch size 和序列长度都是线性增长？这对「能服务多少并发」意味着什么？</summary>
+      <div class="answer">
+        <p>每条请求各自持有一份独立的 KV cache（不同请求的 K/V 互不相干），所以随并发数线性叠加；每条请求内部又逐 token 追加，所以随序列长度线性增长。总占用 ≈ 并发数 × 平均序列长度 × per-token 大小。</p>
+        <p>推论：显存装完权重后剩下的空间除以 per-token 大小，就是「全场总 token 预算」。并发和上下文长度在这个预算里此消彼长——这就是为什么长上下文服务的并发上限低，也是容量规划（<a href="2-4-capacity-planning.html">2.4 节</a>）的起点。</p>
+      </div>
+    </details>
+
+    <details>
+      <summary><span class="qtype">场景判断</span>以下哪种负载从 PagedAttention 获益最大？A. 单用户本地跑批量翻译，序列长度固定 512；B. 面向公网的聊天服务，请求长度从 20 到 4000 token 高度不均；C. 离线批量 embedding 计算。</summary>
+      <div class="answer">
+        <p><b>B 获益最大。</b>PagedAttention 消灭的是「按最坏情况预留」造成的浪费——请求长度方差越大、并发越高，预留浪费和碎片就越严重，分页的收益也越大。A 的序列长度固定且已知，预分配几乎没有浪费；C 是 encoder 前向计算，没有自回归增长的 KV cache，分页机制基本无关。</p>
+        <p>记住这个判断模式：<b>「不确定性越大的地方，按需分配的价值越高」</b>——这和操作系统当年引入虚拟内存的理由一字不差。</p>
+      </div>
+    </details>
+
+    <details>
+      <summary><span class="qtype">面试题改编</span>Prompt caching / prefix caching 和 PagedAttention 是什么关系？没有分页能做前缀缓存吗？</summary>
+      <div class="answer">
+        <p>它们解决的问题不同但机制上有依赖关系。PagedAttention 解决「一条序列的 KV 怎么存」；prefix caching 解决「多条序列的公共前缀能不能只算一次、只存一份」。</p>
+        <p>没有分页理论上也能做前缀缓存（连续显存里复制一份前缀 KV），但「共享同一份物理数据」就很难：连续布局下每条序列要求自己的 KV 是一整段连续内存，公共前缀无法被两条序列同时指向。分页 + 块表让「多个逻辑块映射到同一个物理块」变得自然，配合 copy-on-write 处理分叉——所以工程实践里，前缀缓存都是建立在分页机制之上的（应用侧视角见 <a href="2-2-prompt-caching.html">2.2 Prompt Caching</a>）。</p>
+      </div>
+    </details>
+
+  </div>
+</section>
+
+<nav class="next">
+  <a href="1-1-tokenization.html">← 1.1 Tokenization 与 Context Window</a>
+  <a href="1-3-continuous-batching.html">1.3 Continuous Batching →</a>
+</nav>
+
+</div>
+<script src="../assets/quiz.js"></script>
+</body>
+</html>

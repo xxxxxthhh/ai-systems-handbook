@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI 系统工程手册 · AI Systems Engineering Handbook</title>
+<meta name="description" content="面向应用层 AI 工程师的双语手册：LLM 推理基础、服务与成本、RAG、Agent、微调与生产化。">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Noto+Sans+SC:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/handbook.css">
+<script src="assets/theme.js"></script>
+</head>
+<body>
+<button class="theme-toggle" type="button" aria-label="切换深色/浅色模式" title="切换深色/浅色模式">
+  <span class="moon" aria-hidden="true">🌙</span><span class="sun" aria-hidden="true">☀️</span>
+</button>
+<div class="wrap">
+
+<header class="book-head">
+  <div class="blockrow" aria-hidden="true">
+    <span></span><span></span><span></span><span></span><span></span><span></span>
+    <span class="w"></span><span class="w"></span><span class="f"></span><span class="f"></span>
+  </div>
+  <div class="kicker">AI Systems Engineering Handbook</div>
+  <h1>AI 系统工程手册
+    <span class="zh">写给应用层工程师的 LLM 系统知识地图</span>
+  </h1>
+  <p class="lede">从「模型怎么跑起来」到「怎么跑得又快又省」，再到「怎么让它做事、怎么把它养在生产环境里」。中文为主，技术术语保留英文原文。</p>
+  <div class="meta">
+    <span>共 <b>6 Part · 28 章</b></span>
+    <span>附录 <b>3 篇</b></span>
+    <span>支持 <b>深色模式 / 打印导出 PDF</b></span>
+  </div>
+</header>
+
+<section style="margin-top:44px">
+  <div class="callout">
+    <p><b>怎么读这本书 · 知识分层是全书最重要的约定。</b>正文只写<b>原理层</b>——为什么存在、解决什么问题、18 个月后依然成立的部分。所有会过期的内容（工具名、版本、参数、价格）一律放进虚线框的<b>工具层侧栏</b>并标注「截至 YYYY-MM」，或集中在<a href="appendix-a-tooling.html">附录 A</a>。读正文建立判断力，读侧栏解决今天的问题。</p>
+    <p>建议先读 <a href="chapters/0-1-how-to-read.html">Part 0 导读</a>；Part 1→6 是「用 → 调 → 养」的递进顺序，但每章可独立阅读。</p>
+  </div>
+</section>
+
+<!-- ============ Part 0 ============ -->
+<div class="part">
+  <div class="part-head">
+    <span class="no">Part 0</span><h2>导读</h2>
+    <span class="tag">怎么读这本书</span>
+  </div>
+  <ul class="toc">
+    <li><a href="chapters/0-1-how-to-read.html#s01"><span class="n">0.1</span><span class="t">这本书写给谁、不写给谁</span><span class="d">应用层工程师 ✓ / 预训练研究员 ✗</span></a></li>
+    <li><a href="chapters/0-1-how-to-read.html#s02"><span class="n">0.2</span><span class="t">原理层 vs 工具层的阅读方法</span><span class="d">18 个月测试：什么进正文，什么进侧栏</span></a></li>
+    <li><a href="chapters/0-1-how-to-read.html#s03"><span class="n">0.3</span><span class="t">全书贯穿案例预告</span><span class="d">Part 5 的蒸馏故事线</span></a></li>
+  </ul>
+</div>
+
+<!-- ============ Part 1 ============ -->
+<div class="part">
+  <div class="part-head">
+    <span class="no">Part 1</span><h2>LLM 推理基础 · Inference Fundamentals</h2>
+    <span class="tag">模型是怎么跑起来的</span>
+  </div>
+  <ul class="toc">
+    <li><a href="chapters/1-1-tokenization.html"><span class="n">1.1</span><span class="t">Tokenization 与 Context Window</span><span class="d">token 是什么、为什么中文更「贵」、上下文的真实成本曲线</span></a></li>
+    <li><a href="chapters/1-2-kv-cache.html"><span class="n">1.2</span><span class="t">KV Cache 与 PagedAttention</span><span class="d">显存怎么被浪费掉，以及操作系统给出的答案</span></a></li>
+    <li><a href="chapters/1-3-continuous-batching.html"><span class="n">1.3</span><span class="t">Continuous Batching</span><span class="d">static vs continuous batching，吞吐提升从哪来</span></a></li>
+    <li><a href="chapters/1-4-quantization.html"><span class="n">1.4</span><span class="t">量化 Quantization</span><span class="d">为什么可行、质量-显存-速度的三角取舍</span></a></li>
+    <li><a href="chapters/1-5-speculative-decoding.html"><span class="n">1.5</span><span class="t">Speculative Decoding</span><span class="d">草稿模型思想，什么时候反而更慢</span></a></li>
+  </ul>
+</div>
+
+<!-- ============ Part 2 ============ -->
+<div class="part">
+  <div class="part-head">
+    <span class="no">Part 2</span><h2>模型服务与成本工程 · Serving &amp; Cost</h2>
+    <span class="tag">怎么跑得又快又省</span>
+  </div>
+  <ul class="toc">
+    <li><a href="chapters/2-1-latency-metrics.html"><span class="n">2.1</span><span class="t">延迟指标体系</span><span class="d">TTFT / TPOT / E2E，latency 与 throughput 的根本取舍</span></a></li>
+    <li><a href="chapters/2-2-prompt-caching.html"><span class="n">2.2</span><span class="t">Prompt Caching</span><span class="d">前缀缓存原理，及它对提示词结构的反向约束</span></a></li>
+    <li><a href="chapters/2-3-model-routing.html"><span class="n">2.3</span><span class="t">模型分级与路由</span><span class="d">级联、回退与「贵模型只用在刀刃上」</span></a></li>
+    <li><a href="chapters/2-4-capacity-planning.html"><span class="n">2.4</span><span class="t">容量规划与成本估算</span><span class="d">从流量画像推 GPU 数量 / API 预算</span></a></li>
+  </ul>
+</div>
+
+<!-- ============ Part 3 ============ -->
+<div class="part">
+  <div class="part-head">
+    <span class="no">Part 3</span><h2>RAG 与上下文工程 · RAG &amp; Context</h2>
+    <span class="tag">怎么让模型知道它不知道的事</span>
+  </div>
+  <ul class="toc">
+    <li><a href="chapters/3-1-why-rag.html"><span class="n">3.1</span><span class="t">为什么需要 RAG</span><span class="d">参数化知识 vs 非参数化知识，幻觉的知识边界成因</span></a></li>
+    <li><a href="chapters/3-2-chunking.html"><span class="n">3.2</span><span class="t">Chunking 策略</span><span class="d">固定长度 / 语义 / 结构感知切分的边界情况</span></a></li>
+    <li><a href="chapters/3-3-hybrid-search-rerank.html"><span class="n">3.3</span><span class="t">Embedding、Hybrid Search 与 Rerank</span><span class="d">稠密检索的盲区，BM25 为什么没死</span></a></li>
+    <li><a href="chapters/3-4-rag-vs-long-context.html"><span class="n">3.4</span><span class="t">RAG 是错误答案的时候</span><span class="d">长上下文 vs RAG 的成本与质量边界</span></a></li>
+    <li><a href="chapters/3-5-rag-eval.html"><span class="n">3.5</span><span class="t">RAG 评估</span><span class="d">检索指标与生成指标必须分开测</span></a></li>
+  </ul>
+</div>
+
+<!-- ============ Part 4 ============ -->
+<div class="part">
+  <div class="part-head">
+    <span class="no">Part 4</span><h2>Agent 设计模式 · Agent Design Patterns</h2>
+    <span class="tag">怎么让模型做事而不只是说话</span>
+  </div>
+  <ul class="toc">
+    <li><a href="chapters/4-1-tool-use.html"><span class="n">4.1</span><span class="t">Tool Use 基础</span><span class="d">function calling 的本质，schema 设计如何决定成功率</span></a></li>
+    <li><a href="chapters/4-2-planning-loop.html"><span class="n">4.2</span><span class="t">Planning Loop</span><span class="d">ReAct、plan-and-execute、反思；何时循环何时一把梭</span></a></li>
+    <li><a href="chapters/4-3-memory.html"><span class="n">4.3</span><span class="t">Memory 设计</span><span class="d">短期 / 长期记忆与上下文压缩策略</span></a></li>
+    <li><a href="chapters/4-4-multi-agent.html"><span class="n">4.4</span><span class="t">Multi-agent：何时是过度设计</span><span class="d">单 agent + 好工具 vs 多 agent 编排</span></a></li>
+    <li><a href="chapters/4-5-agent-eval.html"><span class="n">4.5</span><span class="t">Agent Evaluation</span><span class="d">轨迹评估、任务完成率，为什么比模型 eval 难</span></a></li>
+  </ul>
+</div>
+
+<!-- ============ Part 5 ============ -->
+<div class="part">
+  <div class="part-head">
+    <span class="no">Part 5</span><h2>Training / Fine-tuning</h2>
+    <span class="tag">贯穿案例：把任务蒸馏到自托管小模型</span>
+  </div>
+  <ul class="toc">
+    <li><a href="chapters/5-1-finetune-decision.html"><span class="n">5.1</span><span class="t">Fine-tune 是最后的手段</span><span class="d">prompt → few-shot → RAG → fine-tune 的升级路径</span></a></li>
+    <li><a href="chapters/5-2-sft-peft.html"><span class="n">5.2</span><span class="t">SFT 与 PEFT 家族</span><span class="d">LoRA/QLoRA 原理、rank 与 alpha 怎么选</span></a></li>
+    <li><a href="chapters/5-3-data-engineering.html"><span class="n">5.3</span><span class="t">数据工程 — 真正的瓶颈</span><span class="d">配比、去重、合成数据与灾难性遗忘</span></a></li>
+    <li><a href="chapters/5-4-alignment-and-validation.html"><span class="n">5.4</span><span class="t">偏好对齐与验证</span><span class="d">RLHF/DPO 概念层、eval set 设计与能力回归</span></a></li>
+  </ul>
+</div>
+
+<!-- ============ Part 6 ============ -->
+<div class="part">
+  <div class="part-head">
+    <span class="no">Part 6</span><h2>生产化 · Production</h2>
+    <span class="tag">可观测性、安全与失败模式</span>
+  </div>
+  <ul class="toc">
+    <li><a href="chapters/6-1-observability.html"><span class="n">6.1</span><span class="t">可观测性</span><span class="d">LLM 应用的 tracing、成本与质量监控</span></a></li>
+    <li><a href="chapters/6-2-prompt-injection.html"><span class="n">6.2</span><span class="t">Prompt Injection 与安全</span><span class="d">攻击面分类、工程化缓解、为什么无法根治</span></a></li>
+    <li><a href="chapters/6-3-hallucination.html"><span class="n">6.3</span><span class="t">幻觉的工程化缓解</span><span class="d">引用约束、置信度信号、拒答设计</span></a></li>
+    <li><a href="chapters/6-4-eval-pipeline.html"><span class="n">6.4</span><span class="t">Eval Pipeline</span><span class="d">离线 eval / 在线 A/B / 回归测试三层体系</span></a></li>
+    <li><a href="chapters/6-5-degradation-fallback.html"><span class="n">6.5</span><span class="t">Degradation 与 Fallback</span><span class="d">上游故障、限流与降级策略</span></a></li>
+  </ul>
+</div>
+
+<!-- ============ 附录 ============ -->
+<div class="part">
+  <div class="part-head">
+    <span class="no">Appendix</span><h2>附录</h2>
+    <span class="tag">易过期内容集中存放</span>
+  </div>
+  <ul class="toc">
+    <li><a href="appendix-a-tooling.html"><span class="n">A</span><span class="t">工具层速查</span><span class="d">推理框架、embedding 模型、微调工具的参数对照，标注截至日期</span></a></li>
+    <li><a href="glossary.html"><span class="n">B</span><span class="t">术语表 Glossary</span><span class="d">英文术语 + 中文解释 + 首次出现章节锚点</span></a></li>
+    <li><a href="appendix-c-interview-index.html"><span class="n">C</span><span class="t">面试题索引</span><span class="d">全书 quiz 按题型聚合，冲刺复习用</span></a></li>
+  </ul>
+</div>
+
+<nav class="next">
+  <span class="disabled">开始阅读 →</span>
+  <a href="chapters/0-1-how-to-read.html">Part 0 · 导读 →</a>
+</nav>
+
+</div>
+</body>
+</html>
