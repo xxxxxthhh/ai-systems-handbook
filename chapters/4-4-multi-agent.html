@@ -3,7 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>4.4 多智能体何时是过度设计 · AI 系统工程手册</title>
+<title>4.4 Multi-agent：何时是过度设计 · AI 系统工程手册</title>
+<meta name="description" content="单 agent 加好工具，与多 agent 编排之间的判断标准。">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Noto+Sans+SC:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -20,23 +21,188 @@
 
 <header class="ch">
   <div class="blockrow" aria-hidden="true">
-    <span></span><span></span><span class="f"></span><span class="f"></span><span class="f"></span>
-    <span class="f"></span><span class="f"></span><span class="f"></span><span class="f"></span><span class="f"></span>
+    <span></span><span class="w"></span><span></span><span class="w"></span><span></span>
+    <span class="w"></span><span></span><span class="w"></span><span class="f"></span><span class="f"></span>
   </div>
   <div class="kicker">Part 4 · Agent Design Patterns 智能体设计</div>
-  <h1>4.4 Multi-agent: When It Is Over-engineering
-    <span class="zh">多智能体何时是过度设计</span>
+  <h1>4.4 Multi-agent
+    <span class="zh">何时是过度设计</span>
   </h1>
+  <div class="meta">
+    <span>难度 <b>★★★</b></span>
+    <span>阅读 <b>~14 min</b></span>
+    <span>面试出现频率 <b>中高</b></span>
+    <span>前置 <b>4.2 Planning Loop</b></span>
+  </div>
 </header>
 
+<!-- ================= 核心概念 ================= -->
 <section id="concept">
-  <div class="sec-tag"><span class="cell" style="background:var(--free)"></span><span class="lab">Draft 待撰写</span></div>
-  <p>本章尚未撰写。返回<a href="../index.html">全书目录</a>。</p>
+  <div class="sec-tag"><span class="cell"></span><span class="lab">Core Concept 核心概念</span></div>
+  <h2>多 agent 的收益来自并行，代价来自上下文割裂</h2>
+
+  <p>多 agent 架构的直觉吸引力很强：把复杂任务拆给若干个「专家」，各司其职，像一个团队一样协作。但在动手之前，需要先看清它<b>真正</b>提供了什么、以及收走了什么。</p>
+
+  <p><b>它真正提供的是并行探索能力。</b>多个 agent 各自拥有独立的上下文窗口，可以同时在不同方向上搜集信息、试验方案。对于一个「需要看 50 份资料才能下结论」的任务，单 agent 必须串行地把 50 份资料挤进一个窗口（还要面对 <a href="3-4-rag-vs-long-context.html">lost in the middle</a>），而 5 个 subagent 可以各看 10 份、各自提炼，再汇总。<b>这是实打实的容量扩展，不是修辞。</b></p>
+
+  <p><b>它收走的是共享上下文。</b>这是多 agent 最根本、也最容易被低估的代价。同一个 agent 内部，第 7 步天然知道第 3 步发生了什么——信息是连续的。而两个 agent 之间，<b>信息只能通过它们交换的那几段文字传递</b>。所有没被写进消息里的隐含判断、试过但放弃的路径、微妙的上下文，全部丢失。</p>
+
+  <div class="callout">
+    <p><b>把它类比成团队协作会更清楚：</b>一个人做完一件事，和五个人分工做完同一件事，后者需要额外付出<b>沟通成本</b>，而且沟通必然有损。人类团队之所以还值得分工，是因为人有真正的并行能力和专业差异。<b>多 agent 也一样——只有当并行带来的收益，大于上下文割裂带来的损失时，它才是对的。</b></p>
+  </div>
+
+  <figure>
+    <svg viewBox="0 0 760 300" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="单 agent 与多 agent 的信息流对比">
+      <text x="20" y="24" class="lbl">单 agent：信息连续，但受单一上下文容量限制</text>
+      <rect x="20" y="38" width="700" height="60" rx="6" fill="var(--alloc-soft)" stroke="var(--alloc)"/>
+      <text x="36" y="60" class="mn">一条连续的上下文</text>
+      <g>
+        <rect x="36"  y="68" width="100" height="22" rx="3" fill="var(--alloc)"/><text x="86"  y="84" text-anchor="middle" class="onfill">步骤 1</text>
+        <rect x="142" y="68" width="100" height="22" rx="3" fill="var(--alloc)"/><text x="192" y="84" text-anchor="middle" class="onfill">步骤 2</text>
+        <rect x="248" y="68" width="100" height="22" rx="3" fill="var(--alloc)"/><text x="298" y="84" text-anchor="middle" class="onfill">步骤 3</text>
+        <rect x="354" y="68" width="100" height="22" rx="3" fill="var(--alloc)"/><text x="404" y="84" text-anchor="middle" class="onfill">步骤 4</text>
+        <rect x="460" y="68" width="244" height="22" rx="3" fill="var(--free)"/><text x="582" y="84" text-anchor="middle" class="mn">…直到窗口装不下</text>
+      </g>
+
+      <text x="20" y="140" class="lbl">多 agent：容量扩展，但每条边都是有损的信息瓶颈</text>
+      <rect x="300" y="154" width="160" height="34" rx="5" fill="var(--head-bg)"/>
+      <text x="380" y="176" text-anchor="middle" class="onfill">主 agent · 编排与汇总</text>
+
+      <path d="M330 190 L150 216" stroke="var(--waste)" stroke-width="2"/>
+      <path d="M380 190 L380 216" stroke="var(--waste)" stroke-width="2"/>
+      <path d="M430 190 L610 216" stroke="var(--waste)" stroke-width="2"/>
+      <text x="200" y="208" class="mn" fill="var(--waste)">有损</text>
+      <text x="390" y="208" class="mn" fill="var(--waste)">有损</text>
+      <text x="530" y="208" class="mn" fill="var(--waste)">有损</text>
+
+      <rect x="60"  y="220" width="180" height="56" rx="6" fill="var(--alloc-soft)" stroke="var(--alloc)"/>
+      <text x="150" y="242" text-anchor="middle" class="mn">subagent A</text>
+      <text x="150" y="262" text-anchor="middle" class="sub">独立上下文</text>
+
+      <rect x="290" y="220" width="180" height="56" rx="6" fill="var(--alloc-soft)" stroke="var(--alloc)"/>
+      <text x="380" y="242" text-anchor="middle" class="mn">subagent B</text>
+      <text x="380" y="262" text-anchor="middle" class="sub">独立上下文</text>
+
+      <rect x="520" y="220" width="180" height="56" rx="6" fill="var(--alloc-soft)" stroke="var(--alloc)"/>
+      <text x="610" y="242" text-anchor="middle" class="mn">subagent C</text>
+      <text x="610" y="262" text-anchor="middle" class="sub">独立上下文</text>
+    </svg>
+    <figcaption><b>图 1 · 两种架构的信息流。</b>橙色的每一条边都是一次有损压缩——subagent 看到的一切，最终只能以一段文字回传。<b>任务的子部分越是互相依赖，这些边上损失的信息就越关键。</b></figcaption>
+  </figure>
+
+  <h3>判断标准：子任务之间的耦合度</h3>
+  <p>把上面的分析收敛成一条可操作的判断线：</p>
+
+  <div class="tbl-scroll">
+  <table>
+    <thead><tr><th></th><th>✓ 适合多 agent</th><th>✗ 不适合多 agent</th></tr></thead>
+    <tbody>
+      <tr><td><b>子任务关系</b></td><td>互相独立，可并行</td><td>紧密依赖，后一步取决于前一步的细节</td></tr>
+      <tr><td><b>信息流向</b></td><td>读取为主（搜集、调研、检索）</td><td>写入为主（修改同一份产物）</td></tr>
+      <tr><td><b>汇总方式</b></td><td>结果可以简单拼接或归纳</td><td>需要全局一致性，局部结果无法独立成立</td></tr>
+      <tr><td><b>典型任务</b></td><td>多方向资料调研、多来源信息交叉验证、大规模并行检索</td><td>写代码、编辑一份文档、需要通盘权衡的方案设计</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <p><b>写代码是最经典的反例。</b>修改一个函数需要知道其他文件里的约定、刚才改过什么、整体设计意图是什么。让三个 agent 并行改三个文件，它们会各自做出局部合理但彼此冲突的决定——变量命名不一致、接口假设不匹配、重复实现同一个工具函数。<b>合并这些冲突的成本，往往高于一开始就串行做。</b></p>
+
+  <h3>在考虑多 agent 之前，先试三件事</h3>
+  <p>大量多 agent 设计其实是在解决本可以更简单解决的问题：</p>
+
+  <p><b>① 更好的工具。</b>很多「需要一个专门的 agent」的场景，本质是需要一个更好的工具。「让一个 SQL agent 负责查数据」通常不如「给主 agent 一个设计良好的查询工具」（<a href="4-1-tool-use.html">4.1</a>）——后者少一层上下文传递，少一处失败点。</p>
+
+  <p><b>② 代码编排 + 单 agent。</b>如果流程是确定的，用代码写死编排逻辑，每一步调用单 agent 或直接调用模型。<b>确定性的部分交给代码，不确定的部分才交给模型</b>（<a href="4-2-planning-loop.html">4.2</a>）。这比让一个「主 agent」去动态调度可靠得多，也便宜得多。</p>
+
+  <p><b>③ 单 agent + 上下文压缩。</b>如果问题只是上下文装不下，先试 <a href="4-3-memory.html">4.3</a> 的压缩与外部化策略。这比引入多 agent 的复杂度低一个数量级。</p>
+</section>
+
+<!-- ================= 案例 ================= -->
+<section id="case">
+  <div class="sec-tag"><span class="cell" style="background:var(--waste)"></span><span class="lab">Case Study 真实案例</span></div>
+  <h2>一份公开的多 agent 工程报告</h2>
+
+  <div class="case">
+    <div class="case-head"><span class="cell"></span>Anthropic 工程博客 · 多 agent 研究系统的构建与代价</div>
+    <div class="case-body">
+      <p>Anthropic 公开分享过他们构建多 agent 研究系统的工程经验。这份材料的价值在于，它同时给出了<b>收益和代价</b>——这在多 agent 的讨论中很少见。</p>
+      <div class="stats">
+        <div class="stat"><div class="n good">+90.2%</div><div class="l">在其内部研究类评测上相对单 agent 的表现提升</div></div>
+        <div class="stat"><div class="n bad">~15×</div><div class="l">相对普通对话的 token 消耗倍数</div></div>
+        <div class="stat"><div class="n">~80%</div><div class="l">token 用量本身即可解释的性能方差比例</div></div>
+      </div>
+      <p><b>第三个数字才是这份报告里最有信息量的部分。</b>如果 token 用量能解释约八成的性能差异，那么意味着：<b>多 agent 的大部分收益并非来自「多个专家协作」这种架构魔法，而是来自「投入了多得多的计算」</b>。这个认识会立刻改变你的评估方式——比较多 agent 与单 agent 时，<b>必须在相当的 token 预算下比较</b>，否则你测的只是「花更多钱效果更好」，那几乎是必然的。</p>
+      <p><b>关于适用边界</b>，这份材料的判断与本章正文一致：多 agent 擅长可以拆成<b>并行研究分支</b>的问题，而对<b>紧密耦合的任务（如写代码）</b>效果较差。经济性上的结论也很直白——15 倍的 token 消耗意味着它只适用于<b>任务价值明显高于计算成本</b>的场景，例如法律尽调、竞品情报、生物医学文献综述这类高价值研究工作。</p>
+      <p><b>怎么用这份材料</b>：不要把 90.2% 当作「多 agent 更好」的证据搬到自己的场景。<b>要记住的是那个三元组</b>——<b>收益（并行探索）、代价（约 15× token）、适用条件（任务可并行拆分且价值高）</b>。拿这三条去对照你自己的任务，通常会发现结论是「不该上」。</p>
+      <p><b>条件说明</b>：上述数字来自厂商自身在其内部研究类评测上的公开报告，评测任务、基线设置与模型配置均由该团队定义，不构成跨场景可比的通用结论。<b>把它当作一个有参考价值的工程案例，而不是一项独立验证的基准结果。</b></p>
+      <div class="src">来源：Anthropic 公开工程博客关于多 agent 研究系统的分享。数字（+90.2%、约 15× token、约 80% 方差解释）引自该公开报告；均为厂商在其内部评测上的自报结果，本书未独立复现。</div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 工具层 ================= -->
+<section id="tools">
+  <div class="sec-tag"><span class="cell" style="background:var(--free)"></span><span class="lab">Tooling Sidebar 工具层</span></div>
+  <div class="toolbox">
+    <div class="toolbox-head">
+      <span class="t">多 agent 编排的现状（会过期，正文不依赖本区块）</span>
+      <span class="date">截至 2026-08</span>
+    </div>
+    <div class="toolbox-body">
+      <p><b>编排框架</b>：LangGraph（以图结构定义状态与转移）、CrewAI（角色分工抽象）、AutoGen（多方对话式协作）等各有侧重。<b>选型前先确定你需要的是哪种拓扑</b>——是「主从（orchestrator-worker）」「流水线」还是「自由对话」。这三种的可控性与调试难度差别极大，其中<b>自由对话式最难在生产中控制</b>。</p>
+      <p><b>最实用的形态是 orchestrator-worker</b>：一个主 agent 负责拆解与汇总，若干 worker 并行执行独立子任务，worker 之间<b>不互相通信</b>。它的信息流是树状而非网状，可预测、可限流、可调试。多方自由对话虽然更「智能」，但轮数与成本难以预估，且极易陷入互相附和的循环。</p>
+      <p><b>成本控制是硬需求</b>：多 agent 的成本方差极大，必须设置<b>全局 token 预算</b>与<b>subagent 数量上限</b>，并在超限时优雅降级。没有预算闸门的多 agent 系统会在遇到复杂输入时产生离谱账单。</p>
+      <p><b>可观测性要求更高</b>：需要能看到<b>每个 subagent 的完整轨迹</b>以及它们之间传递的消息。只记录最终输出的多 agent 系统基本无法排查——你连是哪个 subagent 出的错都不知道。这类系统的调试成本本身就是它的一项重要代价。</p>
+    </div>
+  </div>
+</section>
+
+<!-- ================= Quiz ================= -->
+<section id="quiz">
+  <div class="sec-tag"><span class="cell"></span><span class="lab">Quiz 自测</span></div>
+  <h2>章末自测</h2>
+  <div class="quiz">
+
+    <details>
+      <summary><span class="qtype">场景判断</span>四个需求，各该用单 agent 还是多 agent？A. 调研某技术方向，需查阅几十个来源；B. 重构一个包含 8 个文件的模块；C. 处理客服工单：分类 → 检索知识库 → 生成回复；D. 对一份财报做多角度分析（财务、竞争、风险）。</summary>
+      <div class="answer">
+        <p><b>A 技术调研 → 多 agent 合理。</b>几十个来源可以<b>并行</b>查阅，每个来源的分析<b>互相独立</b>，结果<b>可归纳汇总</b>——三条判据全部满足。且这类任务是读取为主，不存在写冲突。这是多 agent 的标准适用场景。</p>
+        <p><b>B 重构模块 → 单 agent。</b>典型的紧耦合任务：修改一个文件需要知道其他文件的接口约定与刚做出的设计决定。并行修改会产生命名不一致、接口假设冲突、重复实现等问题，<b>合并冲突的成本高于串行完成的成本</b>。如果上下文装不下 8 个文件，正确做法是改进检索与压缩（<a href="4-3-memory.html">4.3</a>），而不是拆 agent。</p>
+        <p><b>C 客服工单 → 都不是，用代码编排。</b>这是本题的陷阱。「分类 → 检索 → 生成」是一个<b>完全确定的流程</b>，步骤固定、顺序固定、无需动态规划。正确做法是代码写死这三步，每步调用模型或直接调用检索——<b>零 agent，零循环</b>。给它套多 agent 架构是纯粹的过度设计，会让一个可预测的流程变得不可预测。</p>
+        <p><b>D 财报多角度分析 → 多 agent 可行，但先试单 agent。</b>三个角度确实相对独立、可并行、可汇总，符合适用条件。<b>但要先问一句：单 agent 分三次调用行不行？</b>如果财报能放进一个上下文窗口，那么「同一份材料、三个不同的分析 prompt、并行调用」就能拿到全部并行收益，而<b>不需要引入 agent 编排的复杂度</b>——这本质上是三次独立的模型调用，不是多 agent。<b>只有当每个角度都需要各自去检索大量额外材料时，真正的多 agent 才有必要。</b></p>
+      </div>
+    </details>
+
+    <details>
+      <summary><span class="qtype">概念题</span>「多 agent 的性能提升中，约八成方差可由 token 用量解释」——这个发现对你评估多 agent 方案有什么方法论上的影响？</summary>
+      <div class="answer">
+        <p><b>核心影响：它把「架构对比」变成了一个必须控制变量的实验。</b></p>
+        <p>如果性能差异主要由投入的计算量驱动，那么「多 agent 比单 agent 好」这个结论在<b>不控制 token 预算</b>的情况下几乎没有信息量——你只证明了花更多钱效果更好，而这不需要多 agent 也能做到。</p>
+        <p><b>正确的对比方式</b>：给单 agent 相当的 token 预算，让它<b>用其他方式</b>把这些预算花掉——更多轮的 ReAct 循环、更多次的自我检验、更大的检索召回量、对同一问题做多次采样再归纳。如果单 agent 在同等预算下表现相当，<b>那么多 agent 带来的只是复杂度</b>。</p>
+        <p><b>这个方法论可以推广</b>：任何声称「新架构效果更好」的对比，都要先问<b>「它是不是只是花了更多计算？」</b>。这在 agent、prompt 技巧、集成方法的评估中普遍适用，也是识别真实创新与包装的有效手段。</p>
+        <p><b>反过来的实用推论</b>：如果你确实愿意为某个任务花 15 倍的计算，那么<b>多 agent 是把这些计算有效花出去的一种方式</b>——尤其当单 agent 已经受限于上下文容量而无法继续吸收更多计算时。<b>这才是多 agent 真正不可替代的地方：突破单一上下文的容量天花板。</b></p>
+      </div>
+    </details>
+
+    <details>
+      <summary><span class="qtype">面试题改编</span>「你会怎么设计一个多 agent 系统？」</summary>
+      <div class="answer">
+        <p>这类开放题的最佳回答，是先<b>质疑前提</b>再给设计。</p>
+        <p><b>第一步：先论证为什么需要多 agent。</b>明确说出三个必要条件——子任务可并行、彼此独立、结果可汇总；并说明已排除三个更简单的替代方案：更好的工具、代码编排 + 单 agent、单 agent + 上下文压缩。<b>直接开始画架构图的候选人，通常没意识到多 agent 是最后的手段。</b></p>
+        <p><b>第二步：选最简单的拓扑。</b>默认 orchestrator-worker——主 agent 拆解与汇总，worker 并行执行且<b>互不通信</b>。树状信息流可预测、可调试；避免多方自由对话，它的轮数和成本都难以约束。</p>
+        <p><b>第三步：设计 agent 之间的接口。</b>这是最关键也最常被忽略的部分。因为每条边都是有损压缩，必须明确规定 worker 回传什么——<b>结构化的结果 + 依据来源 + 置信度 + 未能完成的部分</b>，而不是一段自由文本。接口设计的质量直接决定系统上限。</p>
+        <p><b>第四步：闸门与降级。</b>全局 token 预算、subagent 数量上限、单个 worker 的超时；超限时优雅降级（返回已完成部分而非失败）。</p>
+        <p><b>第五步：可观测性与评估。</b>记录每个 worker 的完整轨迹与传递的消息；评估时<b>在同等 token 预算下与单 agent 对比</b>，并按 <a href="4-5-agent-eval.html">4.5</a> 的方法同时看结果指标与轨迹指标。</p>
+        <p><b>加分</b>：主动说明什么情况下你会放弃多 agent 方案——例如发现子任务其实互相依赖，或发现单 agent 在同等预算下表现相当。</p>
+      </div>
+    </details>
+
+  </div>
 </section>
 
 <nav class="next">
-  <a href="4-3-memory.html">← 4.3 短期记忆、长期记忆与上下文压缩</a>
-  <a href="4-5-agent-eval.html">4.5 轨迹评估与任务完成率 →</a>
+  <a href="4-3-memory.html">← 4.3 Memory 设计</a>
+  <a href="4-5-agent-eval.html">4.5 Agent Evaluation →</a>
 </nav>
 
 </div>

@@ -3,7 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>4.2 ReAct、plan-and-execute 与反思循环 · AI 系统工程手册</title>
+<title>4.2 Planning Loop · AI 系统工程手册</title>
+<meta name="description" content="ReAct、plan-and-execute、反思循环；何时循环何时一把梭。">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Noto+Sans+SC:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -20,23 +21,188 @@
 
 <header class="ch">
   <div class="blockrow" aria-hidden="true">
-    <span></span><span></span><span class="f"></span><span class="f"></span><span class="f"></span>
-    <span class="f"></span><span class="f"></span><span class="f"></span><span class="f"></span><span class="f"></span>
+    <span></span><span></span><span class="w"></span><span></span><span class="w"></span>
+    <span></span><span></span><span class="f"></span><span></span><span class="f"></span>
   </div>
   <div class="kicker">Part 4 · Agent Design Patterns 智能体设计</div>
   <h1>4.2 Planning Loop
-    <span class="zh">ReAct、plan-and-execute 与反思循环</span>
+    <span class="zh">何时循环，何时一把梭</span>
   </h1>
+  <div class="meta">
+    <span>难度 <b>★★★</b></span>
+    <span>阅读 <b>~15 min</b></span>
+    <span>面试出现频率 <b>高</b></span>
+    <span>前置 <b>4.1 Tool Use</b></span>
+  </div>
 </header>
 
+<!-- ================= 核心概念 ================= -->
 <section id="concept">
-  <div class="sec-tag"><span class="cell" style="background:var(--free)"></span><span class="lab">Draft 待撰写</span></div>
-  <p>本章尚未撰写。返回<a href="../index.html">全书目录</a>。</p>
+  <div class="sec-tag"><span class="cell"></span><span class="lab">Core Concept 核心概念</span></div>
+  <h2>循环的本质：用多轮换取「看到中间结果再决定」</h2>
+
+  <p>不带循环的调用是一次性的：给出问题，模型一次生成完整答案。它的根本局限是<b>模型必须在信息不足时就把话说完</b>——它不知道搜索会返回什么、代码能不能跑通、数据库里有没有这条记录。</p>
+
+  <p>循环解决的正是这件事：<b>让模型执行一步、看到真实结果、再决定下一步</b>。每一轮，它掌握的信息都比上一轮多。这个「行动 → 观察 → 再决策」的结构，就是 agent 与普通 LLM 调用的分界线。</p>
+
+  <p>但循环不是免费的，代价有三个，且都随轮数放大：</p>
+
+  <div class="formula"><b>循环的三重代价</b>（自行推导）<br><br>① <b>延迟</b> ≈ 单轮延迟 × 轮数　　→ 8 轮 × 1.5s = <b>12 秒</b>，用户全程在等<br>② <b>成本</b> ≈ Σ 每轮上下文（且上下文<b>逐轮累积</b>，非线性增长）<br>③ <b>可靠性</b> ≈ p<sup>n</sup>　（p = 单步成功率，n = 步数）<br>　　p=0.95, n=10 → <b>0.60</b>　　p=0.90, n=10 → <b>0.35</b><br><br>→ 第三条最致命：<b>单步表现很好的 agent，长链条上会系统性崩溃</b></div>
+
+  <p>第三条值得停下来体会。95% 的单步成功率听起来很不错——但走满 10 步，端到端成功率只剩 60%。这解释了一个普遍现象：<b>demo 里表现惊艳的 agent，一放到真实任务上就不断失败</b>。不是模型退步了，是链条变长了。</p>
+
+  <p><b>因此 agent 设计的第一原则是：能不循环就别循环，必须循环就尽量缩短链条。</b>每减少一步，可靠性都是乘法级的改善。</p>
+
+  <h3>三种循环模式</h3>
+
+  <figure>
+    <svg viewBox="0 0 760 330" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="ReAct、plan-and-execute 与反思三种循环模式的结构对比">
+      <text x="20" y="24" class="lbl">① ReAct — 边想边做，每步都可调整</text>
+      <g>
+        <rect x="20" y="38" width="86" height="30" rx="4" fill="var(--alloc-soft)" stroke="var(--alloc)"/><text x="63" y="58" text-anchor="middle" class="mn">思考</text>
+        <path d="M110 53 L138 53" stroke="var(--ink-soft)" stroke-width="2"/>
+        <rect x="140" y="38" width="86" height="30" rx="4" fill="var(--alloc)"/><text x="183" y="58" text-anchor="middle" class="onfill">行动</text>
+        <path d="M230 53 L258 53" stroke="var(--ink-soft)" stroke-width="2"/>
+        <rect x="260" y="38" width="86" height="30" rx="4" fill="var(--free)"/><text x="303" y="58" text-anchor="middle" class="mn">观察</text>
+        <path d="M303 72 L303 84 L63 84 L63 72" stroke="var(--ink-soft)" stroke-width="2"/>
+        <text x="380" y="58" class="sub">灵活、能纠错；但缺乏全局视野，容易兜圈子</text>
+      </g>
+
+      <text x="20" y="130" class="lbl">② Plan-and-Execute — 先规划全局，再逐条执行</text>
+      <g>
+        <rect x="20" y="144" width="120" height="30" rx="4" fill="var(--waste)"/><text x="80" y="164" text-anchor="middle" class="onfill">一次性规划</text>
+        <path d="M144 159 L172 159" stroke="var(--ink-soft)" stroke-width="2"/>
+        <rect x="174" y="144" width="64" height="30" rx="4" fill="var(--alloc)"/><text x="206" y="164" text-anchor="middle" class="onfill">步1</text>
+        <rect x="242" y="144" width="64" height="30" rx="4" fill="var(--alloc)"/><text x="274" y="164" text-anchor="middle" class="onfill">步2</text>
+        <rect x="310" y="144" width="64" height="30" rx="4" fill="var(--alloc)"/><text x="342" y="164" text-anchor="middle" class="onfill">步3</text>
+        <text x="396" y="164" class="sub">全局最优、可并行、可预估成本</text>
+        <text x="396" y="182" class="sub">但计划在中途失效时难以调整</text>
+      </g>
+
+      <text x="20" y="228" class="lbl">③ Reflection — 做完之后自我批评并重做</text>
+      <g>
+        <rect x="20" y="242" width="86" height="30" rx="4" fill="var(--alloc)"/><text x="63" y="262" text-anchor="middle" class="onfill">产出</text>
+        <path d="M110 257 L138 257" stroke="var(--ink-soft)" stroke-width="2"/>
+        <rect x="140" y="242" width="100" height="30" rx="4" fill="var(--waste)"/><text x="190" y="262" text-anchor="middle" class="onfill">批评/检验</text>
+        <path d="M244 257 L272 257" stroke="var(--ink-soft)" stroke-width="2"/>
+        <rect x="274" y="242" width="86" height="30" rx="4" fill="var(--alloc-soft)" stroke="var(--alloc)"/><text x="317" y="262" text-anchor="middle" class="mn">修订</text>
+        <path d="M317 276 L317 292 L63 292 L63 276" stroke="var(--ink-soft)" stroke-width="2"/>
+        <text x="396" y="262" class="sub">有外部检验信号时非常有效</text>
+        <text x="396" y="280" class="sub">纯自我批评则收益有限</text>
+      </g>
+      <text x="20" y="318" class="sub">三者可组合：plan-and-execute 定框架，单步内用 ReAct 应对意外，关键产出后加一轮 reflection。</text>
+    </svg>
+    <figcaption><b>图 1 · 三种模式的结构与适用面。</b>选择的依据是<b>任务的不确定性来自哪里</b>：步骤未知选 ReAct，步骤已知但要保证全局最优选 plan-and-execute，产出质量需要把关选 reflection。</figcaption>
+  </figure>
+
+  <h3>关于 reflection 的一个重要限定</h3>
+  <p>「让模型检查自己的输出并改进」听起来是免费的质量提升，但它的效果高度依赖一个条件：<b>是否存在外部的、客观的检验信号</b>。</p>
+
+  <p><b>有外部信号时效果显著</b>：代码能不能编译、测试是否通过、JSON 能不能解析、SQL 有没有报错、检索结果是否为空——这些反馈是<b>模型自己产生不了的新信息</b>，据此修订是真正的迭代改进。</p>
+
+  <p><b>纯自我批评时收益有限</b>：让模型「检查这段文字写得好不好」，它用的还是那套判断标准、那些知识。<b>如果它当初能发现这个问题，它一开始就不会犯</b>。这时的反思容易退化成换个说法重写一遍，消耗了成本却没有实质改善，有时甚至把对的改错。</p>
+
+  <div class="callout">
+    <p><b>设计 reflection 时先问：这一轮批评引入了什么模型原先不知道的信息？</b>答案是「外部执行结果」「另一个模型的意见」「检索到的新材料」——值得做。答案是「让它再想想」——多半不值得。这条判断能省掉大量无效的循环。</p>
+  </div>
+
+  <h3>循环必须有刹车</h3>
+  <p>没有终止条件的循环在生产环境里是事故。四道闸门缺一不可：</p>
+
+  <p><b>① 最大轮数</b>——硬上限，超出即终止并明确报告失败。<b>不要让它「尽力而为」地无限跑下去。</b><br>
+  <b>② 死循环检测</b>——检测重复的动作序列（连续三轮调用相同工具和相同参数），立即中断。这是 agent 最常见的失控形态。<br>
+  <b>③ 预算上限</b>——累计 token 或调用成本的上限，防止单个请求烧掉不成比例的资源。<br>
+  <b>④ 失败上报</b>——终止时要给出<b>它做到了哪一步、卡在哪里</b>，而不是一句「无法完成」。这既是用户体验，也是排查的关键素材。</p>
+</section>
+
+<!-- ================= 案例 ================= -->
+<section id="case">
+  <div class="sec-tag"><span class="cell" style="background:var(--waste)"></span><span class="lab">Case Study 真实案例</span></div>
+  <h2>ReAct：把推理和行动交错起来</h2>
+
+  <div class="case">
+    <div class="case-head"><span class="cell"></span>ReAct: Synergizing Reasoning and Acting in Language Models (ICLR 2023)</div>
+    <div class="case-body">
+      <p>Yao 等人指出，在此之前，模型的<b>推理</b>（如 chain-of-thought）与<b>行动</b>（如生成动作计划）基本是分开研究的两个主题。ReAct 的做法是把二者<b>交错生成</b>——一段推理，一个动作，一次观察，再一段推理。</p>
+      <p>论文对这种协同的解释很清晰，值得原样记住：<b>推理轨迹帮助模型归纳、追踪和更新行动计划，并处理异常；而行动让它能与外部知识源或环境交互，获取额外信息。</b>两者互相补足了对方的短板——纯推理会脱离现实（幻觉、错误累积），纯行动则缺乏纠偏能力。</p>
+      <div class="stats">
+        <div class="stat"><div class="n good">+34%</div><div class="l">ALFWorld 上相对模仿学习/强化学习方法的绝对成功率提升</div></div>
+        <div class="stat"><div class="n good">+10%</div><div class="l">WebShop 上的绝对成功率提升</div></div>
+        <div class="stat"><div class="n good">可解释</div><div class="l">生成类人的任务求解轨迹，比无推理轨迹的基线更易理解</div></div>
+      </div>
+      <p>在 HotpotQA 与 Fever 上，ReAct <b>通过与一个简单的 Wikipedia API 交互</b>，缓解了 chain-of-thought 中普遍存在的幻觉与错误传播问题。这一点尤其值得注意：解决幻觉的手段不是更强的推理，而是<b>让模型能去查</b>——与 <a href="3-1-why-rag.html">3.1</a> 中 RAG 的思路完全一致。</p>
+      <p><b>条件</b>：这些数字来自 2023 年的特定基准与当时的基线方法，不能直接外推到今天的任务。<b>可迁移的是那个结构性洞察</b>：推理与行动交错，比先想完再做或边做不想都更稳健——因为它让每一步的决策都建立在真实反馈之上。今天几乎所有 agent 框架的主循环，本质上都是 ReAct 的变体。</p>
+      <p><b>顺带一提它的局限</b>：ReAct 是逐步贪心的，没有全局计划，因此在需要通盘权衡或可并行的任务上容易绕远路——这正是 plan-and-execute 类模式补位的地方。</p>
+      <div class="src">来源：Yao, Zhao, Yu, Du, Shafran, Narasimhan, Cao, "ReAct: Synergizing Reasoning and Acting in Language Models", ICLR 2023. 数字与结论引自论文摘要。</div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 工具层 ================= -->
+<section id="tools">
+  <div class="sec-tag"><span class="cell" style="background:var(--free)"></span><span class="lab">Tooling Sidebar 工具层</span></div>
+  <div class="toolbox">
+    <div class="toolbox-head">
+      <span class="t">循环实现的实操要点（会过期，正文不依赖本区块）</span>
+      <span class="date">截至 2026-08</span>
+    </div>
+    <div class="toolbox-body">
+      <p><b>先手写主循环</b>：agent 的主循环通常不到一百行——发请求、解析工具调用、执行、把结果追加回消息列表、重复。<b>先手写一遍再决定要不要上框架</b>，否则出问题时你会不知道该在哪一层排查（与 <a href="3-1-why-rag.html">3.1</a> 对 RAG 框架的建议相同）。</p>
+      <p><b>并行化能大幅压缩延迟</b>：若一轮内返回多个独立的工具调用，务必并发执行（<a href="4-1-tool-use.html">4.1</a>）。此外 plan-and-execute 模式下，计划中互不依赖的步骤也应并行——这是把 8 轮串行压成 3 轮的主要手段。</p>
+      <p><b>上下文会逐轮膨胀</b>：每一轮的工具返回都会累积进上下文，长循环下 token 成本呈超线性增长，还会撞上「lost in the middle」（<a href="3-4-rag-vs-long-context.html">3.4</a>）。需要主动做上下文压缩，这是 <a href="4-3-memory.html">4.3</a> 的主题。</p>
+      <p><b>流式反馈很重要</b>：多轮循环意味着用户要等很久。把「正在搜索…」「已找到 3 份文档，正在分析…」这类中间状态流式推给前端，能极大改善等待体验——这不是锦上添花，而是长循环 agent 的必需品。</p>
+      <p><b>必须记录完整轨迹</b>：每一轮的输入、模型输出、工具调用与返回、耗时。这是排查与 <a href="4-5-agent-eval.html">4.5 轨迹评估</a>的唯一依据。<b>只记录最终答案的 agent 是不可调试的。</b></p>
+    </div>
+  </div>
+</section>
+
+<!-- ================= Quiz ================= -->
+<section id="quiz">
+  <div class="sec-tag"><span class="cell"></span><span class="lab">Quiz 自测</span></div>
+  <h2>章末自测</h2>
+  <div class="quiz">
+
+    <details>
+      <summary><span class="qtype">估算题</span>某 agent 单步成功率 92%，完成典型任务需 12 步。端到端成功率是多少？若要把它提到 80% 以上，有哪些手段、各自需要做到什么程度？</summary>
+      <div class="answer">
+        <p><b>端到端</b> = 0.92<sup>12</sup> ≈ <b>37%</b>。近三分之二的任务会失败——尽管每一步看起来都「挺可靠」。</p>
+        <p><b>要达到 80%，两个方向</b>：</p>
+        <p><b>① 提高单步成功率</b>：需要 p<sup>12</sup> ≥ 0.8，即 p ≥ 0.8<sup>1/12</sup> ≈ <b>98.2%</b>。从 92% 提到 98.2% 是非常艰难的——这通常意味着换更强的模型加大量的 schema 与 prompt 打磨，且收益递减。</p>
+        <p><b>② 减少步数</b>（通常更有效）：需要 0.92<sup>n</sup> ≥ 0.8，即 n ≤ ln(0.8)/ln(0.92) ≈ <b>2.7 步</b>。也就是说要把 12 步压到 3 步以内。</p>
+        <p><b>怎么压步数</b>——这才是本题的重点：<br>• <b>用代码固化确定性流程</b>：12 步里若有 8 步是固定顺序，就把它们写成一个组合工具，模型只在真正需要判断处介入（<a href="4-1-tool-use.html">4.1</a> 案例的做法）。<br>• <b>并行化</b>：互不依赖的步骤同时执行，虽不改变乘法关系，但大幅降低延迟。<br>• <b>提高单步信息密度</b>：一个返回完整信息的工具，胜过三个要拼装的工具。</p>
+        <p><b>③ 第三条路：加入检验与重试。</b>若某步失败可被<b>检测</b>并重试，该步的有效成功率从 p 升到 1−(1−p)<sup>r</sup>（r 为尝试次数）。p=0.92 重试一次 → 99.4%。<b>但前提是失败必须可检测</b>——静默的错误答案无法重试，这也是为什么工具应尽量返回可校验的结构化结果。</p>
+        <p><b>结论</b>：面对长链条 agent，<b>「缩短链条」几乎总是比「提高单步质量」更有效</b>，因为前者作用在指数上。</p>
+      </div>
+    </details>
+
+    <details>
+      <summary><span class="qtype">场景判断</span>四个任务各选哪种模式？A. 把一段中文翻译成英文；B. 排查一次线上故障；C. 生成一份季度报告（需查 5 个固定数据源）；D. 写一个函数并保证测试通过。</summary>
+      <div class="answer">
+        <p><b>A 翻译 → 不要循环，一次调用。</b>任务确定、无需外部信息、无中间决策。给它套 agent 循环只会增加延迟和成本，且没有任何收益。<b>「这是不是 agent 该做的事」应该是设计的第一个问题。</b></p>
+        <p><b>B 排查故障 → ReAct。</b>典型的高不确定性任务：下一步查什么完全取决于上一步看到了什么（日志异常 → 查该服务指标 → 发现依赖超时 → 查下游）。事先无法规划，必须边看边定。<b>务必配好轮数上限与死循环检测</b>——排查任务最容易陷入反复查同一个指标的循环。</p>
+        <p><b>C 季度报告 → Plan-and-Execute，甚至直接用代码编排。</b>5 个数据源是<b>固定且已知</b>的，根本不需要模型来规划。正确做法是代码并行拉取全部数据，模型只负责最后的分析与撰写——<b>一次调用，零循环</b>。这是「确定性流程不该交给模型规划」的典型例子。</p>
+        <p><b>D 写函数 + 测试通过 → Reflection，且是它的最佳场景。</b>因为存在<b>客观的外部检验信号</b>：测试跑不跑得过，不是模型说了算。循环是「写代码 → 跑测试 → 读报错 → 修改」，每一轮都引入了模型自己产生不了的新信息。<b>注意设上限</b>——若连续三轮测试仍不过，通常是理解偏差而非细节错误，继续循环只是烧钱，应该终止并把情况报给人。</p>
+      </div>
+    </details>
+
+    <details>
+      <summary><span class="qtype">面试题改编</span>「什么时候不该用 agent？」</summary>
+      <div class="answer">
+        <p>这道题考的是克制。四类明确不该用的情形：</p>
+        <p><b>① 流程是确定的。</b>如果步骤固定、分支有限，那就是一个工作流，用代码写死。让模型每次重新「规划」一遍已知流程，是用不确定性替换了确定性——更慢、更贵、更容易错。<b>agent 的价值在于处理未知，不在于执行已知。</b></p>
+        <p><b>② 延迟要求严格。</b>多轮循环的延迟是单次调用的数倍。语音交互、实时补全这类场景，agent 的延迟结构从根上不匹配。</p>
+        <p><b>③ 错误代价高且不可逆。</b>资金转移、数据删除、对外发布——这些场景需要的是确定性与审批流，而不是一个成功率 90% 多的自主循环。可以让 agent 起草，但执行必须由人确认（<a href="4-1-tool-use.html">4.1</a>）。</p>
+        <p><b>④ 链条太长而单步可靠性不够。</b>p<sup>n</sup> 的乘法效应决定了，当任务需要十几步而单步成功率只有九成出头时，端到端成功率会低到没有产品价值。此时应该拆分任务、缩短链条，或干脆改成人机协同——<b>而不是寄希望于「下一代模型会更好」</b>。</p>
+        <p><b>加分回答</b>：给出一个正向判断标准——<b>agent 适合「步骤未知、需要根据中间结果决定下一步、且单步可验证」的任务</b>。三个条件同时满足时它才是对的工具。</p>
+      </div>
+    </details>
+
+  </div>
 </section>
 
 <nav class="next">
-  <a href="4-1-tool-use.html">← 4.1 function calling 的本质与 schema 设计</a>
-  <a href="4-3-memory.html">4.3 短期记忆、长期记忆与上下文压缩 →</a>
+  <a href="4-1-tool-use.html">← 4.1 Tool Use 基础</a>
+  <a href="4-3-memory.html">4.3 Memory 设计 →</a>
 </nav>
 
 </div>

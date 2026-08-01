@@ -3,7 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>4.3 短期记忆、长期记忆与上下文压缩 · AI 系统工程手册</title>
+<title>4.3 Memory 设计 · AI 系统工程手册</title>
+<meta name="description" content="短期记忆、长期记忆与上下文压缩策略。">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Noto+Sans+SC:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -20,23 +21,188 @@
 
 <header class="ch">
   <div class="blockrow" aria-hidden="true">
-    <span></span><span></span><span class="f"></span><span class="f"></span><span class="f"></span>
-    <span class="f"></span><span class="f"></span><span class="f"></span><span class="f"></span><span class="f"></span>
+    <span></span><span></span><span></span><span></span><span class="w"></span>
+    <span class="f"></span><span></span><span></span><span class="f"></span><span class="f"></span>
   </div>
   <div class="kicker">Part 4 · Agent Design Patterns 智能体设计</div>
   <h1>4.3 Memory Design
     <span class="zh">短期记忆、长期记忆与上下文压缩</span>
   </h1>
+  <div class="meta">
+    <span>难度 <b>★★☆</b></span>
+    <span>阅读 <b>~13 min</b></span>
+    <span>面试出现频率 <b>中</b></span>
+    <span>前置 <b>2.2 / 4.2</b></span>
+  </div>
 </header>
 
+<!-- ================= 核心概念 ================= -->
 <section id="concept">
-  <div class="sec-tag"><span class="cell" style="background:var(--free)"></span><span class="lab">Draft 待撰写</span></div>
-  <p>本章尚未撰写。返回<a href="../index.html">全书目录</a>。</p>
+  <div class="sec-tag"><span class="cell"></span><span class="lab">Core Concept 核心概念</span></div>
+  <h2>模型本身没有记忆</h2>
+
+  <p>每一次 API 调用对模型来说都是全新的开始。它「记得」上一轮对话，唯一的原因是<b>你把上一轮的内容又发了一遍</b>。所谓 agent 的记忆，全部是应用层构造出来的幻觉——你决定把什么放进上下文，模型就「记得」什么。</p>
+
+  <p>这个认识把记忆设计还原成了一个朴素的工程问题：<b>在有限的上下文预算里，放什么最划算？</b>它有三重约束——<b>容量</b>（窗口上限）、<b>成本</b>（每 token 都要付费，且累积）、<b>有效性</b>（放进去不等于用得上，见 <a href="3-4-rag-vs-long-context.html">3.4</a>）。</p>
+
+  <h3>两层记忆</h3>
+
+  <figure>
+    <svg viewBox="0 0 760 280" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="短期记忆与长期记忆的分层结构">
+      <text x="20" y="24" class="lbl">记忆的两层结构与它们之间的搬运</text>
+
+      <!-- short term -->
+      <rect x="20" y="40" width="330" height="200" rx="8" fill="var(--alloc-soft)" stroke="var(--alloc)"/>
+      <text x="40" y="66" class="lbl">短期记忆 = 当前上下文</text>
+      <text x="40" y="90" class="mn">system prompt · 工具定义</text>
+      <text x="40" y="110" class="mn">本次会话的对话历史</text>
+      <text x="40" y="130" class="mn">本轮工具返回结果</text>
+      <text x="40" y="164" class="sub">容量：受窗口限制</text>
+      <text x="40" y="184" class="sub">成本：每轮都重新付费</text>
+      <text x="40" y="204" class="sub">生命周期：随会话结束消失</text>
+      <text x="40" y="228" class="sub">读取：模型直接可见，最可靠</text>
+
+      <!-- long term -->
+      <rect x="410" y="40" width="330" height="200" rx="8" fill="var(--waste-soft)" stroke="var(--waste)"/>
+      <text x="430" y="66" class="lbl">长期记忆 = 外部存储</text>
+      <text x="430" y="90" class="mn">用户偏好 · 历史结论</text>
+      <text x="430" y="110" class="mn">过往会话摘要</text>
+      <text x="430" y="130" class="mn">领域知识（即 RAG 索引）</text>
+      <text x="430" y="164" class="sub">容量：几乎无限</text>
+      <text x="430" y="184" class="sub">成本：只在被检索时付费</text>
+      <text x="430" y="204" class="sub">生命周期：跨会话持久</text>
+      <text x="430" y="228" class="sub">读取：需检索，可能取不到</text>
+
+      <path d="M354 118 L406 118" stroke="var(--ink-soft)" stroke-width="2"/>
+      <text x="380" y="110" text-anchor="middle" class="mn">写入</text>
+      <path d="M406 152 L354 152" stroke="var(--ink-soft)" stroke-width="2"/>
+      <text x="380" y="144" text-anchor="middle" class="mn">检索</text>
+
+      <text x="20" y="268" class="sub">长期记忆的读取路径就是一次 RAG —— 因此 Part 3 的全部问题（切分、召回、排序）在这里同样成立。</text>
+    </svg>
+    <figcaption><b>图 1 · 两层记忆。</b>关键认识：<b>长期记忆并不是新东西，它就是一个以「关于这个用户/这个项目的事实」为内容的 RAG 系统</b>。理解这一点可以省掉很多概念负担——你已经知道该怎么评估它了（<a href="3-5-rag-eval.html">3.5</a>）。</figcaption>
+  </figure>
+
+  <h3>上下文压缩：三种策略与它们的取舍</h3>
+  <p>长对话或长循环必然会撑爆上下文。压缩策略的选择，本质是在<b>「保真度」与「成本」</b>之间取舍：</p>
+
+  <div class="tbl-scroll">
+  <table>
+    <thead><tr><th>策略</th><th>做法</th><th>丢失什么</th><th>适用</th></tr></thead>
+    <tbody>
+      <tr><td><b>滑动窗口</b></td><td>只保留最近 N 轮</td><td>早期信息<b>完全丢失</b>——包括最初的任务目标</td><td>信息价值随时间快速衰减的场景（闲聊）；<b>agent 循环中通常是危险的</b></td></tr>
+      <tr><td><b>摘要压缩</b></td><td>把早期内容交给模型压成摘要</td><td>细节、精确数值、原话；且摘要本身可能引入错误</td><td>长对话的通用方案，是目前最常用的做法</td></tr>
+      <tr><td><b>结构化抽取</b></td><td>抽成键值对/JSON（如「用户偏好=简洁」「已确认预算=5万」）</td><td>叙事与上下文脉络</td><td><b>事实类信息的最佳方案</b>——精确、可校验、可增量更新</td></tr>
+      <tr><td><b>外部化 + 检索</b></td><td>全量存外部，按需检索回来</td><td>不丢失，但可能<b>检索不到</b></td><td>历史很长且访问稀疏时</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <p><b>实践中的组合形态</b>通常是：<b>固定的头部</b>（system prompt + 工具定义，永不动）+ <b>结构化的事实区</b>（抽取出的关键结论与约束）+ <b>早期对话的摘要</b> + <b>最近 N 轮的原文</b>。这个结构同时照顾了「关键信息不丢」和「近期细节保真」。</p>
+
+  <div class="callout">
+    <p><b>压缩与 prompt caching 直接冲突，这是最容易踩的坑。</b><a href="2-2-prompt-caching.html">2.2</a> 讲过：缓存匹配是<b>从第 0 个 token 开始的精确前缀匹配</b>。而滑动窗口每轮都会切掉开头一段——<b>前缀每轮都在变，缓存命中率恒为 0</b>。<br><br><b>解法</b>：让上下文<b>只在末尾追加</b>，压缩只在超过阈值时<b>偶尔触发一次</b>（触发时缓存失效一次，之后重新累积）。这把缓存失效频率从「每轮」降到了「每几十轮」，成本差异巨大。<b>「累积 + 偶尔压缩」优于「每轮滑动」</b>，几乎总是如此。</p>
+  </div>
+
+  <h3>该记住什么：三类信息，三种处理</h3>
+  <p>不是所有信息都值得进长期记忆。乱记会带来两个后果：检索噪声上升，以及<b>过时信息污染</b>——后者更危险。</p>
+
+  <p><b>① 稳定偏好</b>（「用户习惯用 Python」「回答要简洁」）——<b>值得记</b>，变化慢、复用率高、体积小。适合结构化存储。</p>
+
+  <p><b>② 关键结论与约束</b>（「已确认预算 5 万」「方案 A 已被否决，原因是…」）——<b>值得记，且必须带时间戳与来源</b>。这类信息一旦过时会造成严重误导，需要有更新与失效机制。</p>
+
+  <p><b>③ 过程细节</b>（每一次工具调用的原始返回、中间推理）——<b>不该进长期记忆</b>。它们体积大、复用率极低，且会稀释检索质量。留在轨迹日志里供排查即可（<a href="4-2-planning-loop.html">4.2</a>）。</p>
+
+  <p>还有一类必须单独处理：<b>用户的个人敏感信息</b>。「记住用户说过的一切」在合规上是危险的默认值——需要明确的存储范围、保留期限、以及删除机制。<b>设计长期记忆时，「怎么删」和「怎么记」同样重要</b>，且往往是事后才发现根本没法删。</p>
+</section>
+
+<!-- ================= 案例 ================= -->
+<section id="case">
+  <div class="sec-tag"><span class="cell" style="background:var(--waste)"></span><span class="lab">Case Study 案例</span></div>
+  <h2>摘要压缩把一个关键约束弄丢了（匿名化）</h2>
+
+  <div class="case">
+    <div class="case-head"><span class="cell"></span>长会话助手 · 用户投诉「聊到后面它就忘了我说过的要求」</div>
+    <div class="case-body">
+      <p><b>设计</b>：一个多轮任务助手，对话超过 20 轮后触发摘要压缩——把前面的内容交给模型压成一段几百字的摘要，替换掉原文。</p>
+      <p><b>症状</b>：用户反馈在长会话的后半段，助手会违背早先明确说过的约束。典型情形是用户在第 3 轮说「预算上限是 5 万，绝对不能超」，到第 30 轮时助手推荐了一个 8 万的方案。</p>
+      <p><b>根因</b>：摘要是<b>有损压缩，而且它的损失不是均匀的</b>。模型做摘要时倾向保留「叙事主线」——讨论了什么、达成了什么共识——而<b>约束条件、否定信息、精确数值恰恰是最容易被压掉的部分</b>。「预算不超过 5 万」在摘要里变成了「讨论了预算问题」，信息量归零。</p>
+      <div class="stats">
+        <div class="stat"><div class="n bad">约束条件</div><div class="l">摘要中最易丢失的一类：不能、必须、上限</div></div>
+        <div class="stat"><div class="n bad">否定信息</div><div class="l">「方案 A 已否决」被压成「讨论了方案 A」，语义反转</div></div>
+        <div class="stat"><div class="n bad">精确数值</div><div class="l">「5 万」变成「一定的预算范围」</div></div>
+      </div>
+      <p><b>修复：把「约束」从摘要里拿出来，单独结构化存储。</b>每轮结束后用一次轻量抽取，把对话中出现的硬性约束、已确认的决定、被否决的选项写入一个独立的结构化区块（如 <code>constraints: [{"预算上限": "50000", "确认于": "第3轮"}]</code>），这个区块<b>永远以原文形式保留在上下文中，不参与摘要</b>。</p>
+      <p><b>为什么有效</b>：因为它承认了一个事实——<b>不同类型的信息，可压缩性完全不同</b>。叙事可以压缩（丢一点细节无妨），约束不能压缩（丢一个字就反了）。用同一种策略处理两者，必然在约束上出事。</p>
+      <p><b>可迁移的原则</b>：<b>做压缩前先分类，对不可压缩的信息做无损保留。</b>这在别处同样成立——日志可以采样，但审计事件不能；缓存可以过期，但一致性约束不能。<b>识别出系统里那些「丢一点就全错」的信息，给它们单独的通道。</b></p>
+      <div class="src">说明：本案例为综合多个真实项目的<b>匿名化复盘</b>，不含任何可识别的公司、产品或个人信息。所述症状与修复为工程实践总结，非实验测量数据。</div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 工具层 ================= -->
+<section id="tools">
+  <div class="sec-tag"><span class="cell" style="background:var(--free)"></span><span class="lab">Tooling Sidebar 工具层</span></div>
+  <div class="toolbox">
+    <div class="toolbox-head">
+      <span class="t">记忆实现的现状（会过期，正文不依赖本区块）</span>
+      <span class="date">截至 2026-08</span>
+    </div>
+    <div class="toolbox-body">
+      <p><b>记忆库</b>：Mem0、Zep、Letta 等提供了开箱的长期记忆能力（抽取、存储、检索、更新）。它们本质上是「RAG + 抽取管线 + 更新策略」的封装。<b>引入前先确认它的更新与删除语义</b>——记忆最难的部分不是写入，而是<b>如何让过时的记忆失效</b>，各家在这一点上的成熟度差异很大。</p>
+      <p><b>框架内置</b>：主流 agent 框架普遍提供对话缓冲、摘要缓冲等 memory 组件。默认实现多为滑动窗口或简单摘要，<b>注意它们与 prompt caching 的冲突</b>（见正文），必要时自己实现「累积 + 阈值触发压缩」。</p>
+      <p><b>压缩用小模型即可</b>：摘要与结构化抽取是相对简单的任务，用便宜的小模型做，成本可以忽略（<a href="2-3-model-routing.html">2.3</a> 的分级思路）。用旗舰模型做摘要是常见的浪费。</p>
+      <p><b>务必监控的两个指标</b>：<b>压缩触发频率</b>（过高说明阈值设置不合理或上下文膨胀过快）与<b>压缩前后的关键信息保留率</b>（用一组已知约束做回归测试）。第二个指标很少有团队做，却是本章案例那类问题的唯一预警手段。</p>
+    </div>
+  </div>
+</section>
+
+<!-- ================= Quiz ================= -->
+<section id="quiz">
+  <div class="sec-tag"><span class="cell"></span><span class="lab">Quiz 自测</span></div>
+  <h2>章末自测</h2>
+  <div class="quiz">
+
+    <details>
+      <summary><span class="qtype">概念题</span>为什么「每轮滑动窗口」这种最简单的记忆策略，在成本上可能比「累积 + 偶尔压缩」更贵？</summary>
+      <div class="answer">
+        <p>反直觉之处在于：滑动窗口<b>发送的 token 更少</b>，但<b>花的钱可能更多</b>。原因是 <a href="2-2-prompt-caching.html">prompt caching</a>。</p>
+        <p>缓存命中要求<b>从第 0 个 token 开始的精确前缀匹配</b>。滑动窗口每轮都从头部切掉一段，导致前缀每轮都变——<b>缓存命中率恒为 0，每一个 token 都按全价计费</b>。</p>
+        <p>累积式则相反：上下文只在末尾追加，前缀始终不变，<b>除新增部分外全部命中缓存</b>。即使发送的 token 总数更多，按折扣计费后的实际成本可能显著更低。</p>
+        <p><b>举例说明</b>（假设缓存读取价为普通输入的 1/10）：滑动窗口每轮发 4000 token 全价 = 4000 单位；累积式第 20 轮发 12000 token，其中 11500 命中缓存 = 11500×0.1 + 500 = <b>1650 单位</b>。发得更多，花得更少。</p>
+        <p><b>更一般的结论</b>：<b>在有前缀缓存的系统里，「只追加」是一种极有价值的设计属性</b>，它同时改善成本与 TTFT。任何会修改上下文头部的操作都应该被视为昂贵操作，尽量降低其频率。</p>
+      </div>
+    </details>
+
+    <details>
+      <summary><span class="qtype">场景判断</span>一个客服 agent 要跨会话记住用户信息。以下四项各该怎么存？A. 用户偏好用英文交流；B. 用户上周投诉过订单 #123 未送达；C. 用户的信用卡后四位；D. 上一轮工具返回的 2000 字物流详情。</summary>
+      <div class="answer">
+        <p><b>A 语言偏好 → 结构化长期记忆。</b>稳定、体积小、复用率极高，是长期记忆最理想的内容。存为键值对（<code>{"preferred_language": "en"}</code>），每次会话开始时直接注入上下文，无需检索。</p>
+        <p><b>B 历史投诉 → 长期记忆，但必须带时间戳与状态。</b>这类事件信息有<b>时效与生命周期</b>：如果投诉已解决而记忆没更新，agent 会在用户已经满意后还在道歉，体验反而更差。必须设计状态更新机制，或在检索时连带查询该工单的<b>当前状态</b>——更稳妥的做法是只记「用户ID关联工单#123」这个索引，具体状态每次实时查（<a href="3-1-why-rag.html#quiz">3.1</a>：实时数据用工具调用，不要存副本）。</p>
+        <p><b>C 信用卡后四位 → 不存。</b>这是合规问题，不是技术问题。支付信息不应进入 LLM 的记忆系统；需要时通过专门的、受控的支付系统接口按需获取并最小化暴露。<b>「模型能记住」不代表「应该让模型记住」</b>——长期记忆的设计必须先过一遍数据分类与合规审查。</p>
+        <p><b>D 2000 字物流详情 → 短期记忆，会话结束即丢弃。</b>典型的过程细节：体积大、时效性强（明天就过期）、复用率接近零。存进长期记忆只会污染检索。<b>但要留在轨迹日志里</b>供排查使用——日志和记忆是两个不同的系统，不要混用。</p>
+      </div>
+    </details>
+
+    <details>
+      <summary><span class="qtype">架构评审</span>某 agent 的记忆方案：每轮对话结束后，把完整对话内容向量化存入向量库；下一轮检索 top-5 相关历史拼进上下文。评审这个设计。</summary>
+      <div class="answer">
+        <p><b>方向是对的</b>（外部化 + 检索），但有五个会在生产中暴露的问题：</p>
+        <p><b>① 存了不该存的。</b>「完整对话内容」包含大量过程细节和一次性信息，它们会稀释检索质量——真正有价值的偏好和约束被淹没在噪声里。<b>应该先抽取再存储</b>，而不是全量入库。</p>
+        <p><b>② 没有更新与失效机制。</b>用户上个月说「我用 Python」，这个月改用 Go——两条矛盾的记忆同时存在，检索可能召回旧的那条。<b>必须有覆盖/失效策略</b>，这是记忆系统与普通 RAG 最本质的区别：<b>知识库的文档是并存的，记忆是会被推翻的。</b></p>
+        <p><b>③ 检索不到 = 遗忘。</b>依赖向量检索意味着继承了它的全部盲区（<a href="3-3-hybrid-search-rerank.html">3.3</a>）。关键约束若召回失败，效果等同于失忆——而这类失败是静默的。<b>硬性约束不应依赖检索</b>，应作为固定内容始终注入。</p>
+        <p><b>④ 破坏 prompt caching。</b>每轮检索到的 top-5 内容不同，若拼在上下文靠前位置，会让缓存全部失效。<b>应放在靠近用户提问的位置</b>（<a href="2-2-prompt-caching.html">2.2</a>）。</p>
+        <p><b>⑤ 缺少合规设计。</b>没有说明保留期限、删除机制、以及用户要求「删除我的数据」时如何执行。向量库中的记忆删除远比想象中麻烦，<b>必须在设计阶段就解决，事后补极其困难</b>。</p>
+        <p><b>改进后的方案</b>：每轮结束后用小模型<b>抽取</b>结构化事实（偏好/约束/决定），带时间戳与来源写入<b>结构化存储</b>（不是向量库）；稳定偏好每次<b>直接注入</b>而非检索；只有体量大的历史叙事才走向量检索；全部记忆关联用户 ID 以支持按需删除。</p>
+      </div>
+    </details>
+
+  </div>
 </section>
 
 <nav class="next">
-  <a href="4-2-planning-loop.html">← 4.2 ReAct、plan-and-execute 与反思循环</a>
-  <a href="4-4-multi-agent.html">4.4 多智能体何时是过度设计 →</a>
+  <a href="4-2-planning-loop.html">← 4.2 Planning Loop</a>
+  <a href="4-4-multi-agent.html">4.4 Multi-agent：何时是过度设计 →</a>
 </nav>
 
 </div>

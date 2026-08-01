@@ -3,7 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>4.1 function calling 的本质与 schema 设计 · AI 系统工程手册</title>
+<title>4.1 Tool Use 基础 · AI 系统工程手册</title>
+<meta name="description" content="function calling 的本质，以及 schema 设计如何决定调用成功率。">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Noto+Sans+SC:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -20,23 +21,190 @@
 
 <header class="ch">
   <div class="blockrow" aria-hidden="true">
-    <span></span><span></span><span class="f"></span><span class="f"></span><span class="f"></span>
-    <span class="f"></span><span class="f"></span><span class="f"></span><span class="f"></span><span class="f"></span>
+    <span></span><span></span><span></span><span class="w"></span><span></span>
+    <span></span><span class="f"></span><span></span><span class="f"></span><span class="f"></span>
   </div>
   <div class="kicker">Part 4 · Agent Design Patterns 智能体设计</div>
   <h1>4.1 Tool Use
     <span class="zh">function calling 的本质与 schema 设计</span>
   </h1>
+  <div class="meta">
+    <span>难度 <b>★★☆</b></span>
+    <span>阅读 <b>~14 min</b></span>
+    <span>面试出现频率 <b>高</b></span>
+    <span>前置 <b>无</b></span>
+  </div>
 </header>
 
+<!-- ================= 核心概念 ================= -->
 <section id="concept">
-  <div class="sec-tag"><span class="cell" style="background:var(--free)"></span><span class="lab">Draft 待撰写</span></div>
-  <p>本章尚未撰写。返回<a href="../index.html">全书目录</a>。</p>
+  <div class="sec-tag"><span class="cell"></span><span class="lab">Core Concept 核心概念</span></div>
+  <h2>模型从来没有「执行」过任何工具</h2>
+
+  <p>这是理解 agent 的第一块基石，也是最常被误解的一点。<span class="term">function calling</span>（函数调用）听起来像模型在调用函数，实际发生的是：</p>
+
+  <p><b>模型生成了一段结构化文本</b>，内容是「我想调用 <code>get_weather</code>，参数是 <code>{"city": "北京"}</code>」。仅此而已。它没有联网，没有访问数据库，没有执行任何代码。<b>真正去执行的是你的程序</b>——你解析这段输出，决定要不要执行、以什么权限执行，然后把结果作为新的一轮输入送回模型。</p>
+
+  <figure>
+    <svg viewBox="0 0 760 250" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="工具调用的完整回路，标出模型与应用代码的边界">
+      <text x="20" y="24" class="lbl">工具调用回路 — 注意那条边界线</text>
+
+      <!-- boundary -->
+      <line x1="380" y1="40" x2="380" y2="230" stroke="var(--waste)" stroke-width="3" stroke-dasharray="6 4"/>
+      <text x="200" y="56" text-anchor="middle" class="mn">模型侧（只会生成文本）</text>
+      <text x="570" y="56" text-anchor="middle" class="mn" fill="var(--waste)">你的代码（真正的执行者 · 信任边界）</text>
+
+      <rect x="30" y="70" width="320" height="34" rx="5" fill="var(--alloc)"/>
+      <text x="190" y="92" text-anchor="middle" class="onfill">① 收到问题 + 工具 schema</text>
+
+      <rect x="30" y="120" width="320" height="34" rx="5" fill="var(--alloc)"/>
+      <text x="190" y="142" text-anchor="middle" class="onfill">② 输出：想调用 get_weather(city=北京)</text>
+
+      <path d="M354 137 L410 137" stroke="var(--ink-soft)" stroke-width="2"/>
+
+      <rect x="415" y="120" width="320" height="34" rx="5" fill="var(--waste)"/>
+      <text x="575" y="142" text-anchor="middle" class="onfill">③ 校验参数 · 鉴权 · 真正执行</text>
+
+      <rect x="415" y="170" width="320" height="34" rx="5" fill="var(--waste)"/>
+      <text x="575" y="192" text-anchor="middle" class="onfill">④ 把结果作为新一轮输入送回</text>
+
+      <path d="M410 187 L354 187" stroke="var(--ink-soft)" stroke-width="2"/>
+
+      <rect x="30" y="170" width="320" height="34" rx="5" fill="var(--alloc)"/>
+      <text x="190" y="192" text-anchor="middle" class="onfill">⑤ 读到结果，生成最终回答</text>
+
+      <text x="20" y="240" class="sub">模型的全部能力止步于②。所有安全控制都必须建立在③，因为那是唯一真实发生的地方。</text>
+    </svg>
+    <figcaption><b>图 1 · 工具调用回路与信任边界。</b>橙色虚线是整章最重要的一条线。模型的输出是<b>一个请求，不是一个命令</b>——它可以被拒绝、被修改、被要求二次确认。任何把模型输出直接送进执行器的设计，都等于把系统的权限交给了一段可被输入操纵的文本（见 <a href="6-2-prompt-injection.html">6.2</a>）。</figcaption>
+  </figure>
+
+  <p>这个认识有一个直接的工程推论：<b>agent 的安全性完全由你在③处的实现决定，与模型有多「听话」无关。</b>再好的 prompt 也只是降低模型提出危险请求的概率，而③处的权限校验才是真正的保证。</p>
+
+  <h3>工具描述就是 prompt</h3>
+  <p>模型凭什么知道该调哪个工具、参数怎么填？<b>只凭你给的那段 schema</b>——工具名、描述、参数名、参数描述。它不能读你的源码，不知道你的业务约定，也没有试错的机会。</p>
+
+  <p>所以 <b>tool schema 不是接口文档，它是 prompt 的一部分</b>，应该按写 prompt 的标准去写，而不是按写 API 文档的标准。这个视角转换能解决大部分工具调用失败：</p>
+
+  <div class="tbl-scroll">
+  <table>
+    <thead><tr><th>要素</th><th>✗ 常见写法</th><th>✓ 更好的写法</th></tr></thead>
+    <tbody>
+      <tr><td><b>工具名</b></td><td><code>qry_usr_ord_v2</code></td><td><code>get_user_orders</code>——用模型能理解的自然命名，缩写和版本号只会制造歧义</td></tr>
+      <tr><td><b>描述</b></td><td>「查询订单」</td><td>「查询指定用户的历史订单列表。<b>仅返回近 12 个月内的订单</b>；查单笔订单详情请用 <code>get_order_detail</code>」——写清<b>边界</b>和<b>与相邻工具的区别</b></td></tr>
+      <tr><td><b>参数</b></td><td><code>status: string</code></td><td><code>status: enum["pending","shipped","done"]</code>——<b>能用枚举就别用自由文本</b>，这一条改动往往能消除大半参数错误</td></tr>
+      <tr><td><b>必填项</b></td><td>全部可选，缺失时报错</td><td>明确标出必填；对可选参数说明默认行为</td></tr>
+      <tr><td><b>错误返回</b></td><td><code>{"error": "invalid input"}</code></td><td>「city 参数无效：'北平'。有效值为中国城市的现用名称，如 '北京'」——<b>错误信息是模型下一轮的输入，要写成教学材料</b></td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <div class="callout">
+    <p><b>最容易被忽略的一条：错误信息是给模型看的。</b>传统 API 的错误信息写给开发者，可以简略；agent 的错误信息会<b>直接进入模型的下一轮上下文</b>，成为它自我纠正的唯一依据。一句「参数错误」让模型只能瞎猜；一句「日期格式应为 YYYY-MM-DD，你传的是 '下周三'——如需相对日期请先调用 <code>get_current_date</code>」则几乎必然让它一次改对。<b>把错误信息当 prompt 写，是投入产出比最高的 agent 优化之一。</b></p>
+  </div>
+
+  <h3>工具集设计的三条原则</h3>
+
+  <p><b>① 为模型设计，不要镜像内部 API。</b>内部 API 是为程序员设计的，往往粒度细、参数多、需要多步组合。直接暴露给模型，等于要求它现场学习你的系统架构。更好的做法是包一层<b>面向任务的工具</b>：与其给出 <code>get_user</code> + <code>get_orders</code> + <code>get_shipping</code> 三个工具让模型自己拼，不如提供一个 <code>get_order_status(order_id)</code> 直接返回它需要的全部信息。<b>每减少一次模型的推理跳跃，就减少一处出错的机会。</b></p>
+
+  <p><b>② 工具数量要控制。</b>工具越多，选错的概率越高，且每个工具的 schema 都要占用上下文（并影响 <a href="2-2-prompt-caching.html">2.2</a> 的缓存前缀长度）。当工具超过十几个时，应考虑<b>分组按需加载</b>——先让模型选择任务类别，再只加载该类别下的工具。</p>
+
+  <p><b>③ 消除工具之间的语义重叠。</b>如果两个工具的描述让模型难以区分该用哪个，那么错误就是必然的，且这类错误无法靠 prompt 修好。<b>重叠是设计问题，要在 schema 层面消除</b>——合并、或在描述里写明「什么时候用这个而不用那个」。</p>
+</section>
+
+<!-- ================= 案例 ================= -->
+<section id="case">
+  <div class="sec-tag"><span class="cell" style="background:var(--waste)"></span><span class="lab">Case Study 案例</span></div>
+  <h2>把 18 个工具砍成 6 个之后（匿名化）</h2>
+
+  <div class="case">
+    <div class="case-head"><span class="cell"></span>内部运维助手 · 工具调用成功率长期上不去</div>
+    <div class="case-body">
+      <p><b>背景</b>：一个内部运维 agent，把已有的运维 API 逐个包装成工具暴露给模型，共 18 个。上线后调用成功率始终不理想，团队反复调整 system prompt 收效甚微。</p>
+      <p><b>诊断</b>：把失败轨迹按错误类型归类后，问题分布得很清楚——错误集中在三类，而没有一类是「模型不够聪明」：</p>
+      <div class="stats">
+        <div class="stat"><div class="n bad">选错工具</div><div class="l">三个查询类工具功能高度重叠，描述看不出区别</div></div>
+        <div class="stat"><div class="n bad">参数格式错</div><div class="l">时间参数是自由文本，模型填入「昨天」「上周」</div></div>
+        <div class="stat"><div class="n bad">多步拼装失败</div><div class="l">一个常见任务需串联 4 个工具，中途任一环出错即失败</div></div>
+      </div>
+      <p><b>三处针对性修改</b>：</p>
+      <p><b>① 合并重叠工具</b>：三个查询工具合并为一个，用 <code>resource_type</code> 枚举参数区分。模型不再需要在语义相近的选项间做判断——<b>把「选择」变成「填参数」，难度下降一个量级</b>。</p>
+      <p><b>② 参数改枚举 + 结构化</b>：时间参数从自由文本改为 <code>{"range": enum["last_1h","last_24h","last_7d"]}</code>，覆盖 90% 的真实用法；确需精确时间时用单独的可选字段。<b>枚举把「模型要生成正确格式」变成了「模型只需选一个」。</b></p>
+      <p><b>③ 为高频任务提供组合工具</b>：把那个需要 4 步的常见诊断流程，包装成单个 <code>diagnose_service(service_name)</code>，内部由代码按固定顺序编排。<b>确定性的流程就该用代码写死，不该让模型每次现场规划</b>——模型只在真正需要判断的地方发挥。</p>
+      <p>18 个工具最终收敛到 6 个。<b>整个过程没有更换模型、没有微调、system prompt 基本没动。</b></p>
+      <p><b>可迁移的判断</b>：当 agent 表现不佳时，团队的第一反应通常是「调 prompt」或「换更强的模型」，但很多失败的根因在<b>工具集的设计</b>里。一个有效的自检问题是：<b>把这套工具的 schema 打印出来交给一个不了解你系统的新同事，他能只凭这些描述正确完成任务吗？</b>如果不能，模型也不能——它掌握的信息不会比这更多。</p>
+      <div class="src">说明：本案例为综合多个真实项目的<b>匿名化复盘</b>，不含任何可识别的公司、系统或个人信息。工具数量与错误分类为叙述性概括，非某次具体实验的测量数据。</div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 工具层 ================= -->
+<section id="tools">
+  <div class="sec-tag"><span class="cell" style="background:var(--free)"></span><span class="lab">Tooling Sidebar 工具层</span></div>
+  <div class="toolbox">
+    <div class="toolbox-head">
+      <span class="t">function calling 的实现细节（会过期，正文不依赖本区块）</span>
+      <span class="date">截至 2026-08</span>
+    </div>
+    <div class="toolbox-body">
+      <p><b>Schema 格式</b>：主流 API 普遍以 JSON Schema 描述工具参数。多家提供「严格模式」（strict / structured outputs），可<b>在解码层保证输出符合 schema</b>——这类似 <a href="3-4-rag-vs-long-context.html#quiz">3.4 提到的约束解码</a>，能从机制上消除结构性错误，能开就开。</p>
+      <p><b>并行工具调用</b>：多数模型支持一轮返回多个工具调用请求。若这些调用彼此独立，<b>并行执行可显著降低总延迟</b>（见 <a href="4-2-planning-loop.html">4.2</a> 关于轮数放大延迟的讨论）。注意你的执行层要真的并发执行，否则这个能力白给。</p>
+      <p><b>MCP</b>（Model Context Protocol）：把工具定义与实现从应用中解耦的开放协议，让同一批工具可被不同的 agent 应用复用。适合工具需要跨多个应用共享的场景；单一应用内的少量工具直接实现更简单。</p>
+      <p><b>本地/开源模型</b>：工具调用能力差异比通用能力差异更大。小模型常见的失败是「生成了正确 JSON 但选错工具」或「参数幻觉」。若必须用小模型，<b>严格模式 + 极少的工具数 + 全枚举参数</b>是可行的组合。</p>
+      <p><b>务必记录的可观测数据</b>：每次工具调用的<b>名称、参数、返回、耗时、成功与否</b>，以及失败后模型的下一步动作。这是 agent 排查的第一手材料，也是 <a href="4-5-agent-eval.html">4.5 轨迹评估</a>的数据基础——不记录，后面所有分析都做不了。</p>
+    </div>
+  </div>
+</section>
+
+<!-- ================= Quiz ================= -->
+<section id="quiz">
+  <div class="sec-tag"><span class="cell"></span><span class="lab">Quiz 自测</span></div>
+  <h2>章末自测</h2>
+  <div class="quiz">
+
+    <details>
+      <summary><span class="qtype">概念题</span>「模型调用了删除接口，把生产数据删了」——这个说法在技术上哪里不准确？正确的表述和防护点在哪？</summary>
+      <div class="answer">
+        <p><b>不准确之处</b>：模型没有、也不可能「调用」任何接口。它只是生成了一段文本，内容是「建议调用 <code>delete_records</code>，参数为 ...」。<b>真正执行删除的是应用代码</b>——是它读取了这段输出，并选择了执行。</p>
+        <p><b>正确表述</b>：「应用代码在没有充分校验的情况下，执行了模型建议的删除操作。」</p>
+        <p><b>为什么这个区分很重要</b>：它决定了防护点在哪。如果认为「模型删了数据」，修复方向会是「改 prompt 让模型别这么做」——这只能降低概率，永远无法保证，而且在 prompt injection 面前完全失效（<a href="6-2-prompt-injection.html">6.2</a>）。</p>
+        <p><b>正确的防护点全在执行侧</b>：① <b>最小权限</b>——agent 使用的凭证本身就不应具备删除生产数据的权限；② <b>危险操作需二次确认</b>——不可逆操作必须由人确认，而不是由模型判断该不该做；③ <b>参数白名单与范围校验</b>——限制作用范围；④ <b>可审计</b>——全部工具调用留痕，可回溯可回滚。</p>
+        <p><b>一句话</b>：<b>把模型的输出当作来自不可信用户的请求来对待</b>，你为普通用户输入做的所有校验，一个都不能少。</p>
+      </div>
+    </details>
+
+    <details>
+      <summary><span class="qtype">场景判断</span>agent 经常在两个功能相近的工具之间选错。应该怎么修？为什么调 system prompt 通常不管用？</summary>
+      <div class="answer">
+        <p><b>为什么 prompt 不管用</b>：模型选工具时的主要依据是<b>工具自身的 schema</b>——名称与描述，它们与查询的语义相关性决定了选择。system prompt 里的「注意区分 A 和 B」是一句远离决策点的抽象指令，很容易被具体的语义相似度压过去。<b>在错误的层面上修问题，只能靠概率，修不干净。</b></p>
+        <p><b>按优先级的修法</b>：</p>
+        <p><b>① 合并。</b>最彻底的解法——如果两个工具真的相近，就合并成一个，用枚举参数区分。<b>把「选择题」变成「填空题」</b>，问题从根上消失。</p>
+        <p><b>② 在描述里写明分界。</b>不能合并时，在每个工具的描述里明确写出边界与对照：「查询订单<b>列表</b>用本工具；查询<b>单笔订单详情</b>请用 get_order_detail」。相互引用的描述比孤立的描述有效得多。</p>
+        <p><b>③ 重命名。</b>让名称本身携带区分度：<code>search_orders_by_user</code> / <code>get_order_by_id</code> 一眼可辨，胜过 <code>query_orders</code> / <code>fetch_order</code>。</p>
+        <p><b>④ 分组按需加载。</b>工具很多时，先判断任务类别，只加载相关工具——模型面对的选项少了，选错的机会自然少。</p>
+        <p><b>通用原则</b>：<b>能在 schema 层面消除的歧义，不要留给 prompt 去弥补。</b>结构约束优于语言劝导——这与 <a href="3-4-rag-vs-long-context.html#quiz">3.4</a> 中「格式问题用约束解码而非微调」是同一条思路。</p>
+      </div>
+    </details>
+
+    <details>
+      <summary><span class="qtype">架构评审</span>某 agent 设计：暴露一个通用工具 <code>execute_sql(query: string)</code>，让模型自己写 SQL 查数据库。评审这个设计。</summary>
+      <div class="answer">
+        <p><b>优点</b>：极其灵活，一个工具覆盖所有查询需求，无需为每种查询单独建工具。在<b>只读、内部、低风险</b>的数据探索场景下，这是一个合理甚至优秀的设计。</p>
+        <p><b>但作为面向用户的生产设计，它有四个严重问题</b>：</p>
+        <p><b>① 权限边界完全消失。</b>一个能执行任意 SQL 的工具，其权限等于该数据库连接的全部权限。模型写出 <code>DROP TABLE</code> 或跨租户查询时，你没有任何结构化的手段去拦截——只能做字符串匹配，而这是出了名的拦不干净。</p>
+        <p><b>② prompt injection 的直通车。</b>如果查询涉及用户可控的内容，攻击者可以诱导模型生成任意 SQL。这把一个 LLM 问题直接升级成了 SQL 注入（<a href="6-2-prompt-injection.html">6.2</a>）。</p>
+        <p><b>③ 正确性无法保证。</b>模型需要准确掌握表结构、字段含义、join 关系与业务约定。schema 稍复杂，它写出的 SQL 就可能<b>语法正确但语义错误</b>——返回一个看起来合理的错误数字，比报错危险得多。</p>
+        <p><b>④ 性能不可控。</b>模型可能生成全表扫描或笛卡尔积，拖垮生产库。</p>
+        <p><b>改进方案</b>：<b>① 参数化的任务级工具</b>——把真实需要的查询固化成 <code>get_sales_by_region(region, month)</code> 这样的工具，SQL 由代码写死，模型只填参数。这解决全部四个问题，是绝大多数生产场景的正确答案。<b>② 若确需灵活性</b>：只读副本 + 只读账号 + 查询超时 + 结果行数上限 + 表/列白名单 + 全量审计日志，并把它限制在内部可信用户使用。<b>③ 折中</b>：让模型从预定义的查询模板中选择并填参数——保留部分灵活性，同时保住可控性。</p>
+        <p><b>贯穿的判断</b>：<b>工具的能力上限就是攻击面的上限。</b>设计工具时问一句「如果模型完全被攻击者控制，这个工具最坏能造成什么后果」——答案不可接受，就该收窄它。</p>
+      </div>
+    </details>
+
+  </div>
 </section>
 
 <nav class="next">
-  <a href="3-5-rag-eval.html">← 3.5 检索指标与生成指标分离评估</a>
-  <a href="4-2-planning-loop.html">4.2 ReAct、plan-and-execute 与反思循环 →</a>
+  <a href="3-5-rag-eval.html">← 3.5 RAG 评估</a>
+  <a href="4-2-planning-loop.html">4.2 Planning Loop →</a>
 </nav>
 
 </div>

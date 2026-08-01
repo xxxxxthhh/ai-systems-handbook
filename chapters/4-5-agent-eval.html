@@ -3,7 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>4.5 轨迹评估与任务完成率 · AI 系统工程手册</title>
+<title>4.5 Agent Evaluation · AI 系统工程手册</title>
+<meta name="description" content="轨迹评估、任务完成率，以及为什么 agent eval 比模型 eval 难。">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Noto+Sans+SC:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -20,23 +21,190 @@
 
 <header class="ch">
   <div class="blockrow" aria-hidden="true">
-    <span></span><span></span><span class="f"></span><span class="f"></span><span class="f"></span>
-    <span class="f"></span><span class="f"></span><span class="f"></span><span class="f"></span><span class="f"></span>
+    <span></span><span></span><span class="w"></span><span></span><span class="w"></span>
+    <span></span><span class="w"></span><span></span><span></span><span class="f"></span>
   </div>
   <div class="kicker">Part 4 · Agent Design Patterns 智能体设计</div>
   <h1>4.5 Agent Evaluation
-    <span class="zh">轨迹评估与任务完成率</span>
+    <span class="zh">为什么 agent eval 比模型 eval 难得多</span>
   </h1>
+  <div class="meta">
+    <span>难度 <b>★★★</b></span>
+    <span>阅读 <b>~15 min</b></span>
+    <span>面试出现频率 <b>中高</b></span>
+    <span>前置 <b>4.1 – 4.4</b></span>
+  </div>
 </header>
 
+<!-- ================= 核心概念 ================= -->
 <section id="concept">
-  <div class="sec-tag"><span class="cell" style="background:var(--free)"></span><span class="lab">Draft 待撰写</span></div>
-  <p>本章尚未撰写。返回<a href="../index.html">全书目录</a>。</p>
+  <div class="sec-tag"><span class="cell"></span><span class="lab">Core Concept 核心概念</span></div>
+  <h2>四个让 agent 评估变难的结构性差异</h2>
+
+  <p>评估一个模型：给输入，比对输出，算分。评估一个 agent：<b>上面每一步都不成立</b>。四个差异，每一个都独立地增加了难度：</p>
+
+  <p><b>① 没有唯一正确的过程。</b>同一个任务，agent 可以先查 A 再查 B，也可以反过来，两条路都对。评估不能比对固定答案，必须能容纳多种合理路径。</p>
+
+  <p><b>② 状态会被改变。</b>agent 会调用工具，工具会写数据、发消息、改状态。这意味着<b>评估不可重复</b>——第二次跑的初始状态已经不同了。必须构造可重置的沙箱环境，而这本身就是不小的工程量。</p>
+
+  <p><b>③ 部分正确很常见。</b>「完成了 8 步中的 6 步」该算多少分？二元的成功/失败会丢掉大量信息，而设计部分分数又极易主观。</p>
+
+  <p><b>④ 随机性被链条放大。</b>这是最要命的一条。模型本身的输出就有随机性，而 agent 要连续做十几个决策——<b>同一个任务跑两次，可能一次成功一次失败</b>。跑一遍得到的分数几乎没有意义。</p>
+
+  <h3>由此得出的第一条原则：单次成功率是骗人的</h3>
+  <p>第④条有一个直接后果，值得单独强调：<b>用「跑一次的成功率」评估 agent，会系统性地高估它的可靠性</b>。</p>
+
+  <p>假设某任务 agent 有 70% 的概率成功。跑一次，你有 70% 的概率看到成功，于是记录「这个任务通过了」。但对用户来说，真实体验是<b>每三次就有一次失败</b>——而这在你的评估报告里完全看不见。</p>
+
+  <div class="formula"><b>pass<sup>k</sup>：更诚实的可靠性指标</b><br><br>pass<sup>k</sup> = 同一任务<b>连续 k 次执行全部成功</b>的概率<br><br>若单次成功率 p = 0.9：pass<sup>8</sup> = 0.9<sup>8</sup> ≈ <b>0.43</b><br>若单次成功率 p = 0.7：pass<sup>8</sup> = 0.7<sup>8</sup> ≈ <b>0.06</b><br><br>→ 它衡量的是<b>一致性</b>，而这正是生产系统真正需要的东西<br><span class="mn">（上式为按各次独立的简化假设推导；真实场景中各次执行并非严格独立）</span></div>
+
+  <p>为什么一致性比平均成功率更重要？因为<b>用户不会平均地体验你的系统</b>。一个「大部分时候能用，偶尔莫名其妙失败」的 agent，在用户心中的评价接近于「不可靠」，而不是「70 分」。尤其当 agent 被嵌入自动化流程时，不一致意味着无法信任、必须人工复核，那么自动化的价值就所剩无几了。</p>
+
+  <h3>两层评估：结果与轨迹</h3>
+
+  <figure>
+    <svg viewBox="0 0 760 270" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="结果评估与轨迹评估的分工">
+      <text x="20" y="24" class="lbl">只看结果不够，必须同时看过程</text>
+
+      <rect x="20" y="40" width="340" height="200" rx="8" fill="var(--alloc-soft)" stroke="var(--alloc)"/>
+      <text x="40" y="66" class="lbl">结果评估 Outcome</text>
+      <text x="40" y="92" class="mn">任务完成率 / pass^k</text>
+      <text x="40" y="112" class="mn">最终状态是否正确</text>
+      <text x="40" y="132" class="mn">是否满足业务约束</text>
+      <text x="40" y="164" class="sub">优点：客观、可自动化、直接对应业务价值</text>
+      <text x="40" y="188" class="sub">盲点：不知道为什么失败；</text>
+      <text x="40" y="208" class="sub">也无法区分「做对了」与「蒙对了」</text>
+
+      <rect x="400" y="40" width="340" height="200" rx="8" fill="var(--waste-soft)" stroke="var(--waste)"/>
+      <text x="420" y="66" class="lbl">轨迹评估 Trajectory</text>
+      <text x="420" y="92" class="mn">是否选对了工具</text>
+      <text x="420" y="112" class="mn">步数是否合理（有无绕路/循环）</text>
+      <text x="420" y="132" class="mn">失败后能否自我纠正</text>
+      <text x="420" y="164" class="sub">优点：可归因，能指出该改哪里</text>
+      <text x="420" y="188" class="sub">盲点：标注成本高；</text>
+      <text x="420" y="208" class="sub">且「好过程」不保证「好结果」</text>
+
+      <text x="20" y="264" class="sub">结果评估回答「行不行」，轨迹评估回答「为什么」。缺了后者，优化 agent 就只能靠猜——这与 3.5 节 RAG 分层评估是同一个道理。</text>
+    </svg>
+    <figcaption><b>图 1 · 两层评估的分工。</b>务实的做法：<b>结果评估全量自动跑（作为门禁），轨迹评估抽样做（作为诊断）</b>。轨迹标注很贵，只对失败案例和抽样的成功案例做即可。</figcaption>
+  </figure>
+
+  <p><b>轨迹评估里最有信息量的几个自动化指标</b>（不需要人工标注就能算）：<b>步数分布</b>（比最优路径多走了几步）、<b>工具调用失败率</b>（按工具分开统计，能直接定位是哪个 schema 有问题）、<b>重复动作率</b>（检测绕圈）、<b>触发终止条件的比例</b>（撞上最大轮数说明任务超出能力）。这几个数几乎零成本，却能覆盖大部分诊断需求。</p>
+</section>
+
+<!-- ================= 案例 ================= -->
+<section id="case">
+  <div class="sec-tag"><span class="cell" style="background:var(--waste)"></span><span class="lab">Case Study 真实案例</span></div>
+  <h2>τ-bench：把「不一致」量化出来</h2>
+
+  <div class="case">
+    <div class="case-head"><span class="cell"></span>τ-bench: A Benchmark for Tool-Agent-User Interaction in Real-World Domains (2024)</div>
+    <div class="case-body">
+      <p>Yao、Shinn 等人构建的 τ-bench 模拟了真实业务场景中的三方交互：<b>一个用户（由语言模型模拟）、一个配备领域 API 工具的 agent、以及一套必须遵守的领域政策规则</b>。这个设定比传统的静态问答基准更接近生产环境——agent 不仅要完成任务，还要在与用户的多轮交互中遵守业务规则。</p>
+      <p>论文的核心贡献之一是提出了 <b>pass<sup>k</sup></b> 指标：<b>评估 agent 行为在多次试验中的可靠性</b>。测量结果相当清醒：</p>
+      <div class="stats">
+        <div class="stat"><div class="n bad">&lt; 50%</div><div class="l">当时最先进的函数调用 agent 的任务成功率</div></div>
+        <div class="stat"><div class="n bad">pass⁸ &lt; 25%</div><div class="l">零售域：连续 8 次全部成功的比例</div></div>
+        <div class="stat"><div class="n">「相当不一致」</div><div class="l">论文对 agent 行为稳定性的直接评价</div></div>
+      </div>
+      <p><b>pass<sup>8</sup> 低于 25% 意味着什么</b>：即使任务本身的单次成功率还过得去，让 agent 把同一件事连做 8 次都做对，成功概率不足四分之一。<b>对于任何要放进自动化流程的应用，这个数字比「单次成功率」更能说明它能不能用。</b></p>
+      <p><b>这项工作对工程实践的三条启示</b>：<br><b>①</b> 评估 agent 必须<b>重复多次跑同一个任务</b>，报告一致性而非单次结果。只跑一遍的评估报告应当被视为不完整。<br><b>②</b> <b>规则遵循是一个独立的失败维度。</b>agent 可能「完成了任务但违反了政策」——比如成功改了订单，却跳过了必需的身份验证步骤。这在只看任务完成率的评估里是隐形的，必须单独设指标。<br><b>③</b> <b>用户交互本身是评估的一部分。</b>真实场景中用户不会一次说清需求，agent 需要追问、澄清、处理反悔。用「一句话完整需求」构造的评估集会大幅高估真实表现。</p>
+      <p><b>条件</b>：上述数字为该论文发布时（2024）对当时模型的测量，具体数值必然随模型演进而变化。<b>可迁移的不是数字，是 pass<sup>k</sup> 这个衡量方式</b>——以及「先进模型在真实业务任务上的一致性，远低于单次基准分数所暗示的水平」这一判断。</p>
+      <div class="src">来源：Yao, Shinn, et al., "τ-bench: A Benchmark for Tool-Agent-User Interaction in Real-World Domains", arXiv:2406.12045. 引用的数字（成功率 &lt;50%、零售域 pass<sup>8</sup> &lt;25%）出自论文摘要原文。</div>
+    </div>
+  </div>
+
+  <h2 style="margin-top:56px">一个私有 AI 助理平台的评估体系演进（匿名化）</h2>
+
+  <div class="case">
+    <div class="case-head"><span class="cell"></span>三个阶段：从「看着还行」到「可以自动发布」</div>
+    <div class="case-body">
+      <p><b>阶段一 · 人工体验（前 3 个月）。</b>团队靠手动试用判断质量：改完 prompt，试十几个问题，感觉变好了就发布。<b>问题很快暴露</b>——改动 A 修好了一类问题却弄坏了另一类，而没人发现，因为没人会去重试那些「本来就好的」用例。<b>回归退化完全不可见。</b></p>
+
+      <p><b>阶段二 · 固定用例集（第 4–6 个月）。</b>整理出约 80 个任务用例，每次发布前跑一遍，人工看结果。改善明显，但暴露了两个新问题：<b>①</b> 同一个用例两次跑的结果可能不同，人工判断「这算通过吗」摇摆不定，评估结论不稳定；<b>②</b> 知道「第 37 号用例失败了」，但不知道为什么失败——是工具选错、参数错、还是最后总结时出的问题？<b>每次排查都要人工翻日志。</b></p>
+
+      <p><b>阶段三 · 分层 + 重复（第 7 个月起）。</b>三项改造把评估变成了可自动化的门禁：</p>
+      <div class="stats">
+        <div class="stat"><div class="n good">×5</div><div class="l">每个用例重复执行 5 次，报告 pass¹ 与 pass⁵</div></div>
+        <div class="stat"><div class="n good">沙箱</div><div class="l">工具接入可重置的模拟环境，让重复执行成为可能</div></div>
+        <div class="stat"><div class="n good">4 类</div><div class="l">失败自动归类：工具选择 / 参数 / 执行 / 总结</div></div>
+      </div>
+
+      <p><b>最有价值的一项改造是「可重置的沙箱」</b>——它看起来只是基础设施，实际上是整个体系的前提：<b>没有它，就无法重复执行；无法重复执行，就测不出一致性；测不出一致性，pass<sup>k</sup> 无从谈起</b>。团队一开始把它排在优先级末尾，事后看这是最该先做的一件事。</p>
+
+      <p><b>第二有价值的是失败自动归类</b>。四类失败对应四种完全不同的修复动作：工具选择错 → 改 schema 描述（<a href="4-1-tool-use.html">4.1</a>）；参数错 → 改成枚举或加约束；执行错 → 工具本身或外部系统的问题；总结错 → 改最后一步的 prompt。<b>有了归类，优化不再靠猜；而归类本身可以从轨迹日志自动算出来，几乎零成本。</b></p>
+
+      <p><b>结果</b>：评估从「发布前一天的人工体验」变成了「每次提交自动运行的门禁」，并且当指标下降时能直接指出是哪一类退化。<b>回过头看，前两个阶段并不是浪费——没有阶段二积累的用例，阶段三无从谈起。但如果重来一次，团队会把沙箱建设提前到第一个月。</b></p>
+      <div class="src">说明：本案例为综合多个真实项目的<b>匿名化叙述</b>，不含任何可识别的公司、产品或个人信息。阶段划分与改造项为工程实践总结，非实验测量数据。</div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 工具层 ================= -->
+<section id="tools">
+  <div class="sec-tag"><span class="cell" style="background:var(--free)"></span><span class="lab">Tooling Sidebar 工具层</span></div>
+  <div class="toolbox">
+    <div class="toolbox-head">
+      <span class="t">agent 评估的工具现状（会过期，正文不依赖本区块）</span>
+      <span class="date">截至 2026-08</span>
+    </div>
+    <div class="toolbox-body">
+      <p><b>公开基准</b>：τ-bench / τ²-bench（工具-用户-政策交互）、SWE-bench（真实代码仓库上的问题修复）、WebArena（网页环境操作）等。它们适合<b>横向比较模型的 agent 能力</b>，但对你自己的系统调优参考有限——你的工具集、领域和约束都不同。<b>公开基准选模型，自建用例集调系统。</b></p>
+      <p><b>可观测性平台</b>：LangSmith、Langfuse、Braintrust、Arize Phoenix 等提供轨迹记录、回放与评估编排。核心价值是<b>把轨迹结构化存下来</b>——这是所有轨迹分析的前提。自建也不难，关键是从第一天就记全（<a href="4-2-planning-loop.html">4.2</a>）。</p>
+      <p><b>沙箱环境是最该自建的部分</b>：把 agent 用到的工具接上可重置的模拟实现（内存数据库、mock 的外部 API），保证每次执行从相同初始状态开始。<b>这决定了你能否重复执行，进而决定能否测一致性</b>，几乎没有现成方案可用，但投入回报极高。</p>
+      <p><b>LLM-as-judge 要慎用于轨迹</b>：让模型判断「这个轨迹合理吗」比判断「这个答案对吗」更不可靠——轨迹更长、评判标准更主观。<b>优先使用可程序化判定的指标</b>（步数、工具失败率、重复动作、终止原因），把 LLM 评委留给确实需要语义判断的少数环节，并且必须与人工标注校准（<a href="6-4-eval-pipeline.html">6.4</a>）。</p>
+    </div>
+  </div>
+</section>
+
+<!-- ================= Quiz ================= -->
+<section id="quiz">
+  <div class="sec-tag"><span class="cell"></span><span class="lab">Quiz 自测</span></div>
+  <h2>章末自测</h2>
+  <div class="quiz">
+
+    <details>
+      <summary><span class="qtype">架构评审</span>某订单处理 agent 的设计如下，找出其中的问题：<br>「用户提出请求 → agent 自主规划 → 依次调用 查订单 / 改地址 / 发退款 / 发通知邮件 四个工具 → 循环直到 agent 认为完成 → 返回结果。评估方式：每周抽 50 条线上会话人工打分。」</summary>
+      <div class="answer">
+        <p><b>问题一：不可逆操作缺少人工确认。</b>「发退款」和「发通知邮件」都是<b>不可撤销且面向真实用户</b>的动作。让 agent 自主决定执行，意味着一次误判就会造成真实的资金损失或错误通知。<b>修法</b>：不可逆操作必须与只读操作分离——agent 可以自由调用查询类工具，但涉及资金和对外通信的动作应产出一个<b>待确认的操作提案</b>，由人工或强规则校验后执行（<a href="4-1-tool-use.html">4.1</a> 的信任边界）。</p>
+        <p><b>问题二：终止条件是「agent 认为完成」。</b>这不是终止条件，这是没有终止条件。缺少最大轮数、死循环检测、预算上限（<a href="4-2-planning-loop.html">4.2</a>）。生产环境中这会表现为个别请求消耗掉不成比例的资源，或反复调用同一个工具。<b>修法</b>：补齐四道闸门，并在触发时给出「做到哪一步、卡在哪里」的结构化报告。</p>
+        <p><b>问题三：评估方式完全不足。</b>这一项有多重缺陷——<b>①</b> 只看结果不看轨迹，失败了不知道是选错工具还是参数错；<b>②</b> 每次跑一遍，测不出一致性，而 τ-bench 一类工作表明 agent 的不一致性正是主要风险；<b>③</b> 每周抽样意味着一次退化最多可能上线七天；<b>④</b> 抽样样本每周变化，跨版本不可比；<b>⑤</b> 人工打分无一致性校验。<b>修法</b>：建固定用例集 + 可重置沙箱 + 每个用例重复执行报告 pass<sup>k</sup> + 失败自动归类 + 接入发布门禁。</p>
+        <p><b>问题四（加分项）：「自主规划」用错了地方。</b>订单处理的流程其实是相对确定的——查订单、判断是否符合退款条件、改地址或退款、通知。<b>这更适合用代码编排</b>，只在需要判断的环节调用模型（<a href="4-2-planning-loop.html">4.2</a>）。让 agent 每次重新规划一个已知流程，是用不确定性替换确定性，同时放大了前三个问题。</p>
+        <p><b>问题五（加分项）：缺少规则遵循的独立评估。</b>业务上很可能存在「退款前必须核验身份」「超过某金额必须走审批」这类政策。agent 可能<b>完成了任务但违反了政策</b>，而任务完成率指标看不见这一点——需要单独的合规检查项。</p>
+      </div>
+    </details>
+
+    <details>
+      <summary><span class="qtype">估算题</span>某 agent 在评估集上单次成功率 85%。若业务要求「同一任务连做 10 次都不出错」的概率不低于 90%，单次成功率需要达到多少？这个要求现实吗？</summary>
+      <div class="answer">
+        <p><b>当前 pass<sup>10</sup></b> = 0.85<sup>10</sup> ≈ <b>0.197</b>，即约 20%——十次连做全对的概率只有五分之一。</p>
+        <p><b>目标所需</b>：p<sup>10</sup> ≥ 0.9 ⟹ p ≥ 0.9<sup>0.1</sup> ≈ <b>98.95%</b>。</p>
+        <p><b>从 85% 提到 99% 是极其困难的</b>——这通常不是调调 prompt 能达到的量级，而且越接近 100% 边际成本越高。所以这道题的正确答案不是「去提高成功率」，而是<b>质疑需求本身</b>：</p>
+        <p><b>① 真的需要连续 10 次全对吗？</b>如果每次任务是独立的，用户关心的是<b>单次体验</b>，那么 85% 的单次成功率配合良好的失败处理（明确告知失败、保留现场、一键转人工）可能完全可接受。「连续 10 次」这个指标要成立，通常意味着这些任务在业务上是<b>链式依赖</b>的。</p>
+        <p><b>② 如果确实是链式依赖，正确做法是打断链条</b>：在关键节点插入校验与人工确认，把「10 步全自动」改成「10 步中有 2 个确认点」。<b>每个确认点都把失败概率的连乘重置了一次</b>，这比提升单步成功率有效得多。</p>
+        <p><b>③ 或者让失败可检测、可重试</b>：若单步失败能被自动检测并重试，有效成功率从 0.85 升到 1−0.15<sup>2</sup> ≈ 0.978，pass<sup>10</sup> 随之升到约 80%。<b>前提是失败必须可检测</b>——这再次说明工具应返回可校验的结构化结果。</p>
+        <p><b>本题的核心判断</b>：面对 p<sup>n</sup> 的乘法困境，<b>「缩短链条」和「加入检验点」几乎总是优于「提升单步质量」</b>——与 <a href="4-2-planning-loop.html#quiz">4.2 的估算题</a>是同一个结论。</p>
+      </div>
+    </details>
+
+    <details>
+      <summary><span class="qtype">面试题改编</span>「为什么 agent 的评估比模型的评估难？」</summary>
+      <div class="answer">
+        <p>四个结构性差异，逐条说清即可：</p>
+        <p><b>① 过程不唯一。</b>模型评估比对固定答案；agent 完成同一任务可以有多条合理路径，无法用唯一标准答案判定。</p>
+        <p><b>② 有状态且不可重复。</b>agent 调用工具会改变外部状态，第二次执行的初始条件已经不同。必须构建可重置的沙箱环境才能重复评估——<b>这是一项常被低估的基础设施投入</b>。</p>
+        <p><b>③ 随机性被链条放大。</b>模型单次输出的随机性，经过十几步决策会被显著放大，导致同一任务多次执行结果不同。<b>因此单次成功率会系统性高估可靠性</b>，需要用 pass<sup>k</sup> 这类一致性指标。</p>
+        <p><b>④ 失败需要归因。</b>模型答错就是答错；agent 失败可能出在工具选择、参数构造、工具执行、结果理解、最终总结等任何环节，每个环节的修复手段完全不同。<b>只有结果指标是不可行动的</b>，必须配合轨迹评估。</p>
+        <p><b>加分</b>：主动提到还有一个正交维度——<b>规则遵循</b>。agent 可能成功完成任务却违反了业务政策（跳过身份验证、超额未审批），这在任务完成率里是隐形的，需要独立指标。以及给出务实的落地方案：<b>结果评估全量自动化作为门禁，轨迹评估抽样做诊断，失败按类型自动归类</b>。</p>
+      </div>
+    </details>
+
+  </div>
 </section>
 
 <nav class="next">
-  <a href="4-4-multi-agent.html">← 4.4 多智能体何时是过度设计</a>
-  <a href="5-1-finetune-decision.html">5.1 决策框架：先别训 →</a>
+  <a href="4-4-multi-agent.html">← 4.4 Multi-agent：何时是过度设计</a>
+  <a href="5-1-finetune-decision.html">5.1 Fine-tune 是最后的手段 →</a>
 </nav>
 
 </div>

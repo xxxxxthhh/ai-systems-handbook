@@ -75,6 +75,12 @@ def check_chapter(path, name):
     if "theme-toggle" not in html:
         err(name, "缺少主题切换按钮")
 
+    # SVG 内不能用 HTML 内联标签：会被解析成未知 SVG 元素，文字直接不显示
+    for svg in re.findall(r"<svg\b.*?</svg>", html, flags=re.S):
+        bad_tags = re.findall(r"</?(b|i|em|strong|br|code|span)\b", svg)
+        if bad_tags:
+            err(name, "SVG 内出现 HTML 标签（文字将无法渲染）: {}".format(sorted(set(bad_tags))))
+
     # 禁止写死色值（@media print 的强制浅色块是唯一例外，章节页不含该块）
     body = re.sub(r"@media\s+print\s*\{.*?\n\s*\}\s*\n", "", html, flags=re.S)
     hard = re.findall(r'(?:fill|stroke|color|background)\s*[:=]\s*"?#[0-9a-fA-F]{3,8}', body)
