@@ -74,12 +74,12 @@
 <div class="gl-item">
 <div><span class="en">block</span><span class="zh">块</span></div>
 <div class="desc">PagedAttention 中固定大小的 KV cache 分配单元（如 16 个 token 一块）。</div>
-<div class="ref">首次出现：<a href="chapters/1-2-kv-cache.html#concept">1.2 KV Cache 与 PagedAttention</a></div>
+<div class="ref">首次出现：<a href="chapters/1-2-kv-cache.html#waste">1.2 KV Cache 与 PagedAttention</a></div>
 </div>
 <div class="gl-item">
 <div><span class="en">block table</span><span class="zh">块表</span></div>
 <div class="desc">记录「逻辑块 N 存放在哪个物理块」的映射表，使显存分配无需连续。</div>
-<div class="ref">首次出现：<a href="chapters/1-2-kv-cache.html#concept">1.2 KV Cache 与 PagedAttention</a></div>
+<div class="ref">首次出现：<a href="chapters/1-2-kv-cache.html#waste">1.2 KV Cache 与 PagedAttention</a></div>
 </div>
 <div class="gl-item">
 <div><span class="en">BM25</span></div>
@@ -127,7 +127,7 @@
 <div class="gl-item">
 <div><span class="en">copy-on-write</span><span class="zh">写时复制</span></div>
 <div class="desc">多方共享同一份数据、直到有人要写入时才复制的机制。使多条序列可以共享公共前缀的 KV。</div>
-<div class="ref">首次出现：<a href="chapters/1-2-kv-cache.html#concept">1.2 KV Cache 与 PagedAttention</a></div>
+<div class="ref">首次出现：<a href="chapters/1-2-kv-cache.html#waste">1.2 KV Cache 与 PagedAttention</a></div>
 </div>
 </div>
 <div class="gl-group" id="gl-D">
@@ -145,7 +145,7 @@
 <div class="gl-item">
 <div><span class="en">distillation</span><span class="zh">蒸馏</span></div>
 <div class="desc">用强模型的输出训练小模型，使其在窄任务上接近强模型。教师的错误率会被学生继承，因此数据过滤是关键。</div>
-<div class="ref">首次出现：<a href="chapters/5-1-finetune-decision.html#concept">5.1 Fine-tune 是最后的手段</a></div>
+<div class="ref">首次出现：<a href="chapters/5-1-finetune-decision.html#case">5.1 Fine-tune 是最后的手段</a></div>
 </div>
 </div>
 <div class="gl-group" id="gl-E">
@@ -174,7 +174,7 @@
 <div class="gl-item">
 <div><span class="en">GQA</span><span class="zh">分组查询注意力</span></div>
 <div class="desc">Grouped-Query Attention。多个 query head 共享一组 KV head，按比例直接降低 KV cache 占用。它省的不是算力，是显存。</div>
-<div class="ref">首次出现：<a href="chapters/1-2-kv-cache.html#concept">1.2 KV Cache 与 PagedAttention</a></div>
+<div class="ref">首次出现：<a href="chapters/1-2-kv-cache.html#quiz">1.2 KV Cache 与 PagedAttention</a></div>
 </div>
 <div class="gl-item">
 <div><span class="en">groundedness</span><span class="zh">忠实度</span></div>
@@ -195,7 +195,7 @@
 <div class="gl-item">
 <div><span class="en">indirect prompt injection</span><span class="zh">间接提示注入</span></div>
 <div class="desc">把恶意指令藏在模型会读到的外部内容里，借受害者的权限执行。凡是接入检索或工具的系统都要按它来建模。</div>
-<div class="ref">首次出现：<a href="chapters/6-2-prompt-injection.html#concept">6.2 Prompt Injection 与安全</a></div>
+<div class="ref">首次出现：<a href="chapters/6-2-prompt-injection.html#case">6.2 Prompt Injection 与安全</a></div>
 </div>
 <div class="gl-item">
 <div><span class="en">iteration-level scheduling</span><span class="zh">迭代级调度</span></div>
@@ -293,7 +293,7 @@
 <div class="gl-item">
 <div><span class="en">PagedAttention</span><span class="zh">分页注意力</span></div>
 <div class="desc">借鉴操作系统虚拟内存的 KV cache 管理方式：切成固定大小的 block 按需分配，物理上不必连续。消除了预留浪费与外部碎片。</div>
-<div class="ref">首次出现：<a href="chapters/1-2-kv-cache.html#concept">1.2 KV Cache 与 PagedAttention</a></div>
+<div class="ref">首次出现：<a href="chapters/1-2-kv-cache.html#waste">1.2 KV Cache 与 PagedAttention</a></div>
 </div>
 <div class="gl-item">
 <div><span class="en">parameterized query</span><span class="zh">参数化查询</span></div>
@@ -364,7 +364,7 @@
 <div class="gl-item">
 <div><span class="en">RadixAttention</span><span class="zh">基数树注意力</span></div>
 <div class="desc">用基数树自动组织并复用跨请求的公共前缀 KV，无需应用显式声明。</div>
-<div class="ref">首次出现：<a href="chapters/2-2-prompt-caching.html#concept">2.2 Prompt Caching</a></div>
+<div class="ref">首次出现：<a href="chapters/2-2-prompt-caching.html#case">2.2 Prompt Caching</a></div>
 </div>
 <div class="gl-item">
 <div><span class="en">RAG</span><span class="zh">检索增强生成</span></div>
@@ -379,7 +379,7 @@
 <div class="gl-item">
 <div><span class="en">RLHF</span><span class="zh">基于人类反馈的强化学习</span></div>
 <div class="desc">先拟合奖励模型、再用强化学习优化策略的两阶段对齐路径。</div>
-<div class="ref">首次出现：<a href="chapters/5-4-alignment-and-validation.html#concept">5.4 偏好对齐与验证</a></div>
+<div class="ref">首次出现：<a href="chapters/5-4-alignment-and-validation.html#case">5.4 偏好对齐与验证</a></div>
 </div>
 <div class="gl-item">
 <div><span class="en">RRF</span><span class="zh">倒数排名融合</span></div>
@@ -453,7 +453,7 @@
 <div class="gl-item">
 <div><span class="en">virtual memory</span><span class="zh">虚拟内存</span></div>
 <div class="desc">操作系统让进程看到连续地址空间、而物理内存可以是碎片的机制。PagedAttention 把这套思想搬进了显存。</div>
-<div class="ref">首次出现：<a href="chapters/1-2-kv-cache.html#concept">1.2 KV Cache 与 PagedAttention</a></div>
+<div class="ref">首次出现：<a href="chapters/1-2-kv-cache.html#waste">1.2 KV Cache 与 PagedAttention</a></div>
 </div>
 </div>
 <div class="gl-group" id="gl-W">

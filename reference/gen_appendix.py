@@ -183,16 +183,27 @@ def strip_tags(s):
 
 
 def build_glossary(chs):
-    """术语 -> 首次出现的章节 slug（按章节顺序）。"""
+    """术语 -> (首次出现的章节 slug, 该处所在的 section 锚点)。
+
+    锚点必须解析到术语<b>实际所在</b>的 section——全书有 11 个术语首次出现在
+    #waste / #case / #quiz 而非 #concept，一律写死 #concept 会把读者丢到章首，
+    而这类错误 check.py 查不出来（#concept 确实存在）。
+    """
     first = {}
     for slug in CH_META:
-        for t in re.findall(r'<span class="term">(.*?)</span>', chs[slug]):
-            t = strip_tags(t)
-            if t not in first:
-                first[t] = slug
-    # KV cache 在导读中作为「术语写法示例」出现，真正的定义在 1.2
-    if first.get("KV cache") == "0-1-how-to-read":
-        first["KV cache"] = "1-2-kv-cache"
+        html_ = chs[slug]
+        secs = [(m.start(), m.group(1))
+                for m in re.finditer(r'<section id="([^"]+)"', html_)]
+        for m in re.finditer(r'<span class="term">(.*?)</span>', html_):
+            t = strip_tags(m.group(1))
+            if t in first:
+                continue
+            prior = [sid for pos, sid in secs if pos < m.start()]
+            first[t] = (slug, prior[-1] if prior else "concept")
+
+    # KV cache 在导读中仅作为「术语写法示例」出现，真正的定义在 1.2 的核心概念
+    if first.get("KV cache", ("", ""))[0] == "0-1-how-to-read":
+        first["KV cache"] = ("1-2-kv-cache", "concept")
 
     missing = [t for t in first if t not in GLOSS]
     if missing:
@@ -219,9 +230,8 @@ def build_glossary(chs):
         body.append("<h2>{}</h2>".format(L))
         for t in groups[L]:
             zh, desc = GLOSS[t]
-            slug = first[t]
+            slug, anchor = first[t]
             num, name = CH_META[slug]
-            anchor = "s01" if slug.startswith("0-") else "concept"
             body.append('<div class="gl-item">')
             zh_html = ("" if zh == "保留英文"
                        else '<span class="zh">{}</span>'.format(zh))
@@ -269,10 +279,15 @@ def build_interview_index(chs):
                 "每题链接回原章节，参考答案与推导过程在原章节中默认折叠——"
                 "<b>建议先自己回答，再展开对照</b>。</p>"
                 .format(len(CH_META), len(items)))
+    # 锚点用 order 中的序号，不能用 hash(str)——Python 每个进程的字符串 hash
+    # 都不同（PYTHONHASHSEED 默认随机），会导致每次重新生成 id 全变：
+    # 产生无内容变化的 diff，且外部指向 #q-xxxx 的链接全部失效。
+    qid = {q: "q-{}".format(i) for i, q in enumerate(order)}
+
     body.append('<div class="gl-nav">')
     for q in order:
-        body.append('<a href="#q-{}">{}（{}）</a>'.format(
-            abs(hash(q)) % 10000, q, len(by_type[q])))
+        body.append('<a href="#{}">{}（{}）</a>'.format(
+            qid[q], q, len(by_type[q])))
     body.append("</div>")
     body.append('<div class="callout"><p><b>怎么用这一页。</b>'
                 '「面试题改编」与「架构评审」两组最接近真实面试的提问方式，'
@@ -282,7 +297,7 @@ def build_interview_index(chs):
     body.append("</section>")
 
     for q in order:
-        body.append('<div class="gl-group" id="q-{}">'.format(abs(hash(q)) % 10000))
+        body.append('<div class="gl-group" id="{}">'.format(qid[q]))
         body.append("<h2>{}　<span style=\"font-family:var(--mono);font-size:14px;"
                     "font-weight:400;color:var(--ink-soft)\">{} 题</span></h2>"
                     .format(q, len(by_type[q])))

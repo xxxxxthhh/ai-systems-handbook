@@ -33,18 +33,18 @@
 <section style="margin-top:40px">
 <p>本页从全书 29 章的章末自测中<b>自动聚合</b>了 <b>93</b> 道题，按题型分组，便于面试前按题型集中复习。每题链接回原章节，参考答案与推导过程在原章节中默认折叠——<b>建议先自己回答，再展开对照</b>。</p>
 <div class="gl-nav">
-<a href="#q-2084">面试题改编（21）</a>
-<a href="#q-4218">架构评审（10）</a>
-<a href="#q-6096">决策题（3）</a>
-<a href="#q-7952">场景判断（23）</a>
-<a href="#q-9193">场景判断组（1）</a>
-<a href="#q-6464">估算题（11）</a>
-<a href="#q-5288">计算题（1）</a>
-<a href="#q-1836">概念题（23）</a>
+<a href="#q-0">面试题改编（21）</a>
+<a href="#q-1">架构评审（10）</a>
+<a href="#q-2">决策题（3）</a>
+<a href="#q-3">场景判断（23）</a>
+<a href="#q-4">场景判断组（1）</a>
+<a href="#q-5">估算题（11）</a>
+<a href="#q-6">计算题（1）</a>
+<a href="#q-7">概念题（23）</a>
 </div>
 <div class="callout"><p><b>怎么用这一页。</b>「面试题改编」与「架构评审」两组最接近真实面试的提问方式，优先刷这两组；「估算题」「计算题」考察的是能不能当场算出量级，需要动笔而不只是看答案；「场景判断」与「决策题」考察的是取舍意识，答案的价值在推导链条而非结论本身。</p></div>
 </section>
-<div class="gl-group" id="q-2084">
+<div class="gl-group" id="q-0">
 <h2>面试题改编　<span style="font-family:var(--mono);font-size:14px;font-weight:400;color:var(--ink-soft)">21 题</span></h2>
 <div class="gl-item">
 <div class="desc">「上下文窗口从 8K 扩到 128K，是不是就不用做 RAG 了？」</div>
@@ -131,7 +131,7 @@
 <div class="ref"><a href="chapters/6-5-degradation-fallback.html#quiz">6.5 Degradation 与 Fallback →</a></div>
 </div>
 </div>
-<div class="gl-group" id="q-4218">
+<div class="gl-group" id="q-1">
 <h2>架构评审　<span style="font-family:var(--mono);font-size:14px;font-weight:400;color:var(--ink-soft)">10 题</span></h2>
 <div class="gl-item">
 <div class="desc">某 RAG 系统的 prompt 结构为：`[检索到的 5 篇文档] + [system prompt] + [对话历史] + [用户提问]`，检索结果按相关性分数降序排列。指出其中的缓存设计问题。</div>
@@ -174,7 +174,7 @@
 <div class="ref"><a href="chapters/6-5-degradation-fallback.html#quiz">6.5 Degradation 与 Fallback →</a></div>
 </div>
 </div>
-<div class="gl-group" id="q-6096">
+<div class="gl-group" id="q-2">
 <h2>决策题　<span style="font-family:var(--mono);font-size:14px;font-weight:400;color:var(--ink-soft)">3 题</span></h2>
 <div class="gl-item">
 <div class="desc">一个文档问答产品，日均 10 万次调用，目前全部走旗舰模型。小模型价格是旗舰的 1/15，实测在 60% 的请求上质量无差异。给出你的方案，并说明先做什么、后做什么。</div>
@@ -189,7 +189,7 @@
 <div class="ref"><a href="chapters/5-1-finetune-decision.html#quiz">5.1 Fine-tune 是最后的手段 →</a></div>
 </div>
 </div>
-<div class="gl-group" id="q-7952">
+<div class="gl-group" id="q-3">
 <h2>场景判断　<span style="font-family:var(--mono);font-size:14px;font-weight:400;color:var(--ink-soft)">23 题</span></h2>
 <div class="gl-item">
 <div class="desc">产品要支持中英双语。团队按英文语料测出「平均每次请求 500 token」并据此做了成本预算和限流阈值。上线后中文用户占多数，会发生什么？</div>
@@ -284,14 +284,14 @@
 <div class="ref"><a href="chapters/6-5-degradation-fallback.html#quiz">6.5 Degradation 与 Fallback →</a></div>
 </div>
 </div>
-<div class="gl-group" id="q-9193">
+<div class="gl-group" id="q-4">
 <h2>场景判断组　<span style="font-family:var(--mono);font-size:14px;font-weight:400;color:var(--ink-soft)">1 题</span></h2>
 <div class="gl-item">
 <div class="desc">四个需求各选一条路：A. 客服要能回答最新的退款政策；B. 需要稳定输出符合 schema 的 JSON；C. 需要模型用本公司资深法务的方式审阅合同条款；D. 模型总在特定行业术语上理解错误。</div>
 <div class="ref"><a href="chapters/5-1-finetune-decision.html#quiz">5.1 Fine-tune 是最后的手段 →</a></div>
 </div>
 </div>
-<div class="gl-group" id="q-6464">
+<div class="gl-group" id="q-5">
 <h2>估算题　<span style="font-family:var(--mono);font-size:14px;font-weight:400;color:var(--ink-soft)">11 题</span></h2>
 <div class="gl-item">
 <div class="desc">一个中文客服系统：system prompt 800 字，每轮用户输入约 60 字，模型回复约 200 字，平均对话 6 轮。不开任何缓存，估算单次完整对话消耗的 token 量级。</div>
@@ -338,14 +338,14 @@
 <div class="ref"><a href="chapters/4-5-agent-eval.html#quiz">4.5 Agent Evaluation →</a></div>
 </div>
 </div>
-<div class="gl-group" id="q-5288">
+<div class="gl-group" id="q-6">
 <h2>计算题　<span style="font-family:var(--mono);font-size:14px;font-weight:400;color:var(--ink-soft)">1 题</span></h2>
 <div class="gl-item">
 <div class="desc">一个 32 层、hidden_size 4096 的模型以 FP16 服务，每个 token 的 KV cache 是多少？一条 4K 上下文的请求峰值占多少？</div>
 <div class="ref"><a href="chapters/1-2-kv-cache.html#quiz">1.2 KV Cache 与 PagedAttention →</a></div>
 </div>
 </div>
-<div class="gl-group" id="q-1836">
+<div class="gl-group" id="q-7">
 <h2>概念题　<span style="font-family:var(--mono);font-size:14px;font-weight:400;color:var(--ink-soft)">23 题</span></h2>
 <div class="gl-item">
 <div class="desc">为什么模型经常数不清一个单词里有几个字母、也算不好两个数字的大小比较？</div>
