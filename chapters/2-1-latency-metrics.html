@@ -164,7 +164,7 @@
       </div>
       <p><b>条件</b>：三组数字分别对应不同模型与硬件配置，基线均为 vLLM，衡量的是<b>在满足延迟约束前提下的服务容量</b>——这正是上文 goodput 的思路，而不是裸吞吐。</p>
       <p>这个案例的方法论价值大于数字本身：<b>当你面对一个「A 和 B 不可兼得」的取舍时，先别急着在曲线上选点，去检查这条曲线是不是可以被整体推动。</b>此处的关键洞察是——prefill 之所以阻塞 decode，是因为它被当成一个不可分割的原子操作；一旦允许它被切分，冲突的前提就消失了。</p>
-      <div class="src">来源：Agrawal, Kedia, Panwar, Mohan, Kwatra, Gulavani, Tumanov, Ramjee, "Taming Throughput-Latency Tradeoff in LLM Inference with Sarathi-Serve", USENIX OSDI 2024. 数字引自论文；示意图为本书重绘。</div>
+      <div class="src">来源：Agrawal, Kedia, Panwar, Mohan, Kwatra, Gulavani, Tumanov, Ramjee, <a href="https://www.usenix.org/conference/osdi24/presentation/agrawal">"Taming Throughput-Latency Tradeoff in LLM Inference with Sarathi-Serve"</a>, USENIX OSDI 2024. 数字引自论文；示意图为本书重绘。</div>
     </div>
   </div>
 </section>

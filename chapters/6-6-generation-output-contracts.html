@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>6.6 Generation 与 Output Contracts · AI 系统工程手册</title>
+<meta name="description" content="从采样、结构化输出、流式事件到幂等重试的完整输出契约。">
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Noto+Sans+SC:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/handbook.css">
+<script src="../assets/theme.js"></script>
+</head>
+<body>
+<button class="theme-toggle" type="button" aria-label="切换深色/浅色模式" title="切换深色/浅色模式">
+  <span class="moon" aria-hidden="true">🌙</span><span class="sun" aria-hidden="true">☀️</span>
+</button>
+<div class="wrap">
+
+<nav class="crumb"><a href="../index.html">← 目录</a> · Part 6 生产化</nav>
+
+<header class="ch">
+  <div class="blockrow" aria-hidden="true">
+    <span></span><span></span><span class="w"></span><span></span><span></span>
+    <span></span><span class="f"></span><span></span><span class="f"></span><span class="f"></span>
+  </div>
+  <div class="kicker">Part 6 · Production 生产化</div>
+  <h1>6.6 Generation &amp; Output Contracts
+    <span class="zh">采样、结构、流式提交与幂等重试</span>
+  </h1>
+  <div class="meta">
+    <span>难度 <b>★★★</b></span>
+    <span>阅读 <b>~16 min</b></span>
+    <span>面试出现频率 <b>高（系统设计）</b></span>
+    <span>前置 <b>4.1 / 6.1 / 6.5</b></span>
+  </div>
+</header>
+
+<!-- ================= 核心概念 ================= -->
+<section id="concept">
+  <div class="sec-tag"><span class="cell"></span><span class="lab">Core Concept 核心概念</span></div>
+  <h2>模型输出不是返回值，而是一段需要提交协议的候选数据</h2>
+
+  <p>普通函数在相同输入下通常返回相同结果，并以一次明确的 return 结束。生成模型不同：<span class="term">sampling</span>（采样）从一个概率分布中选择下一个 token；服务端实现、模型快照、并行计算与数值精度也都可能改变结果。即使把随机性参数调到最低，也不应把逐 token 相同当成生产契约。</p>
+
+  <p>因此测试目标不该是「同一个 prompt 永远返回同一串字符」，而应是<b>允许多种表述，但每次都满足同一个可验证契约</b>：结构合法、语义成立、权限允许、重复执行不产生重复副作用。把这组条件称为 <span class="term">output contract</span>（输出契约）。</p>
+
+  <div class="formula"><b>输出可提交</b> = 传输完整<br>　　　　　∧ 语法 / schema 合法<br>　　　　　∧ 领域语义合法<br>　　　　　∧ 权限与业务不变量成立<br>　　　　　∧ 当前操作尚未提交<br><br>任一条件不成立 → 拒绝提交、记录原因、进入受控修复或人工流程</div>
+
+  <h3>① 采样：接受非复现，验证可接受集合</h3>
+  <p>采样配置控制的是候选 token 分布的形状，不是正确性，也不是业务风险级别。把生成调得更保守可能减少表述差异，却不能证明事实正确；某些实现提供的复现实验辅助也不能跨模型版本、硬件或服务端升级提供永久保证。具体参数名与当前支持范围属于工具层，见本章侧栏。</p>
+
+  <p>生产测试应从字符串快照升级为三层：<b>① 确定性断言</b>——必需字段、枚举、范围、权限；<b>② 语义断言</b>——金额守恒、日期顺序、引用支持结论；<b>③ 分布性回归</b>——对同一测试集多次采样，监控通过率、拒答率与关键切片，而不是要求所有样本逐字相同。采样次数和容忍区间由错误代价决定。</p>
+
+  <h3>② Structured syntax 不是 semantic validity</h3>
+  <p><span class="term">structured output</span>（结构化输出）解决的是语法空间：字段是否存在、类型是否正确、枚举是否越界。它不能证明字段值符合现实或业务。一个完全通过 JSON Schema 的对象仍可能把退款金额写成负数、引用不存在的订单、安排结束时间早于开始时间。</p>
+
+  <div class="tbl-scroll">
+  <table>
+    <thead><tr><th>验证层</th><th>回答的问题</th><th>失败示例</th><th>负责人</th></tr></thead>
+    <tbody>
+      <tr><td><b>传输</b></td><td>事件是否完整结束？</td><td>连接断开，只收到半个对象</td><td>协议适配层</td></tr>
+      <tr><td><b>语法 / Schema</b></td><td>形状与类型是否合法？</td><td><code>amount</code> 是字符串</td><td>解析器 / schema validator</td></tr>
+      <tr><td><b>领域语义</b></td><td>值是否满足业务规则？</td><td>退款额超过原订单</td><td>领域服务</td></tr>
+      <tr><td><b>授权</b></td><td>当前主体能否执行？</td><td>只读用户触发转账</td><td>策略 / 权限层</td></tr>
+      <tr><td><b>提交</b></td><td>这个操作是否已执行？</td><td>超时重试生成第二张工单</td><td>事务边界</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h3>③ Streaming 是 provisional events，不是多次小提交</h3>
+  <p>流式输出改善感知延迟，却把一个逻辑结果拆成许多 provisional（暂定）事件。任何 delta 都可能是半个词、半段 JSON、随后被拒绝的工具参数，或属于最终状态为 failed / incomplete 的响应。UI 可以把它显示为「正在生成」，但业务系统不能据此提前写库、发邮件或调用有副作用的工具。</p>
+
+  <p>定义唯一的 <span class="term">commit point</span>（提交点）：收到明确完成状态，重组最终对象，通过全部验证，并成功抢占幂等键之后，才允许产生副作用。流中出现的文本只是观察值；完成事件也只是「可以开始验证」，不是「已经通过业务验证」。</p>
+
+  <figure>
+    <svg viewBox="0 0 760 320" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="从流式事件到幂等提交的输出契约流水线">
+      <text x="20" y="24" class="lbl">每个阶段只缩小可接受集合；副作用只发生一次</text>
+
+      <rect x="24" y="58" width="132" height="54" rx="6" fill="var(--free)"/>
+      <text x="90" y="80" text-anchor="middle" class="mn">stream deltas</text>
+      <text x="90" y="99" text-anchor="middle" class="sub">暂定 · 仅展示</text>
+
+      <path d="M162 85 H202" stroke="var(--ink-soft)" stroke-width="2"/>
+      <rect x="208" y="58" width="132" height="54" rx="6" fill="var(--alloc-soft)" stroke="var(--alloc)"/>
+      <text x="274" y="80" text-anchor="middle" class="mn">完成状态</text>
+      <text x="274" y="99" text-anchor="middle" class="sub">完整 / 失败 / 中止</text>
+
+      <path d="M346 85 H386" stroke="var(--ink-soft)" stroke-width="2"/>
+      <rect x="392" y="58" width="156" height="54" rx="6" fill="var(--alloc-soft)" stroke="var(--alloc)"/>
+      <text x="470" y="80" text-anchor="middle" class="mn">schema + 语义 + 权限</text>
+      <text x="470" y="99" text-anchor="middle" class="sub">任一失败即拒绝</text>
+
+      <path d="M554 85 H594" stroke="var(--ink-soft)" stroke-width="2"/>
+      <rect x="600" y="58" width="136" height="54" rx="6" fill="var(--alloc)"/>
+      <text x="668" y="80" text-anchor="middle" class="onfill">幂等提交</text>
+      <text x="668" y="99" text-anchor="middle" class="onfill">副作用一次</text>
+
+      <path d="M274 118 V156" stroke="var(--waste)" stroke-width="2"/>
+      <path d="M470 118 V156" stroke="var(--waste)" stroke-width="2"/>
+      <rect x="188" y="162" width="368" height="50" rx="6" fill="var(--waste-soft)" stroke="var(--waste)"/>
+      <text x="372" y="183" text-anchor="middle" class="lbl">失败 / incomplete / validation error</text>
+      <text x="372" y="201" text-anchor="middle" class="sub">记录原因 → 可重试则重试 → 否则人工处理</text>
+
+      <rect x="72" y="250" width="616" height="48" rx="6" fill="var(--head-bg)"/>
+      <text x="380" y="272" text-anchor="middle" class="onfill">operation_id 贯穿 trace、重试与提交记录</text>
+      <text x="380" y="290" text-anchor="middle" class="onfill">同一业务意图可以生成多次，但只能提交一次</text>
+    </svg>
+    <figcaption><b>图 1 · 输出契约流水线。</b>流式事件可以反复到达，生成也可以重试；只有最终对象通过完整性、schema、语义、权限与幂等检查后，副作用才越过提交点。</figcaption>
+  </figure>
+
+  <h3>④ Retry 复制的是尝试，不应复制业务效果</h3>
+  <p>超时意味着「调用方不知道结果」，不等于「服务端没有完成」。如果连接在服务端成功之后断开，盲目重试可能生成不同答案，更危险的是再次执行付款、建单或发送消息。每个业务意图都需要调用方生成的 <span class="term">idempotency key</span>（幂等键），并贯穿模型调用、工具调用、审计日志与最终写入。</p>
+
+  <p>幂等不是「第二次请求返回同样文本」，而是<b>同一业务意图重复到达时，系统最终只产生一次可见效果</b>。常见实现是：以 operation_id 建唯一约束；提交前原子地写入「已处理」记录与业务结果；重复请求返回既有结果。若外部系统也支持幂等键，向下游透传；若不支持，就在自己控制的边界用 outbox、状态机或人工对账兜住不确定结果。</p>
+</section>
+
+<!-- ================= 案例 ================= -->
+<section id="case">
+  <div class="sec-tag"><span class="cell" style="background:var(--waste)"></span><span class="lab">Case Study 失败案例</span></div>
+  <h2>合法 JSON，重复创建了两张采购单</h2>
+
+  <div class="case">
+    <div class="case-head"><span class="cell"></span>采购助理 · 从「输出格式问题」追到提交协议</div>
+    <div class="case-body">
+      <p><b>事故</b>：一个采购助理让模型流式生成采购单参数。前端看到 JSON 右花括号后立即调用建单工具；几百毫秒后连接被网关判为超时，任务队列自动重试。第二次生成的备注文字不同，但金额与供应商相同，于是系统创建了两张都符合 schema 的采购单。</p>
+      <p><b>为什么现有防线没挡住</b>：JSON 合法只证明语法完整，不证明流已正常结束；schema 只检查字段类型，不知道订单是否重复；重试层用每次 HTTP 尝试的 request_id，而不是稳定的业务 operation_id；工具层没有唯一约束。每一层单独看都「工作正常」，组合起来却重复产生了真实副作用。</p>
+      <p><b>修复</b>：<br><b>①</b> delta 只更新 UI 草稿，不触发工具；仅在最终完成状态后解析。<br><b>②</b> schema 之后增加供应商存在、金额上限、预算归属与用户权限校验。<br><b>③</b> 用户每次「确认采购」生成唯一 operation_id，所有重试复用它；数据库以该 id 建唯一约束。<br><b>④</b> 建单与「operation_id 已提交」在同一事务中写入；不确定结果进入 reconciliation 队列，不自动再建一单。</p>
+      <p><b>结果</b>：生成仍然可能变化、网络仍然可能超时，但这两种不确定性不再越过业务提交点。团队也把测试从「是否返回合法 JSON」升级为「断流、重复事件、超时后成功、并发重试时是否仍只有一个订单」。</p>
+      <div class="src">说明：本案例为综合多个真实项目的<b>匿名化复盘</b>，不含可识别的公司、产品或个人信息。稳定原则与边界参见 <a href="https://docs.pytorch.org/docs/stable/notes/randomness.html">PyTorch Reproducibility 说明</a>（跨版本与平台不保证完全复现）、<a href="https://html.spec.whatwg.org/multipage/server-sent-events.html">WHATWG Server-sent events 标准</a>（事件流传输语义）、<a href="https://www.rfc-editor.org/rfc/rfc9110.html#name-idempotent-methods">RFC 9110 的幂等方法定义</a>与 <a href="https://json-schema.org/specification">JSON Schema 规范</a>；案例情节与结果为工程实践总结，非论文实验数据。</div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 工具层 ================= -->
+<section id="tools">
+  <div class="sec-tag"><span class="cell" style="background:var(--free)"></span><span class="lab">Tooling Sidebar 工具层</span></div>
+  <div class="toolbox">
+    <div class="toolbox-head">
+      <span class="t">当前 API 的契约落点（会过期，正文不依赖本区块）</span>
+      <span class="date">截至 2026-08</span>
+    </div>
+    <div class="toolbox-body">
+      <p><b>OpenAI Responses API</b>：流式接口会发出带类型的事件。应用应区分 delta、<code>response.completed</code>、<code>response.failed</code> 与 <code>response.incomplete</code>，并检查最终 response 状态；事件名和字段以<a href="https://platform.openai.com/docs/api-reference/responses-streaming">官方 Streaming events 参考</a>为准。</p>
+      <p><b>Structured Outputs</b>：Responses API 的 <code>text.format</code> 可使用 <code>json_schema</code>；严格模式只支持 JSON Schema 的一个子集。它保证受支持的结构约束，不承担事实、权限或业务语义校验。具体支持范围以<a href="https://platform.openai.com/docs/guides/structured-outputs">官方 Structured Outputs 指南</a>为准。</p>
+      <p><b>采样参数</b>：不同供应商对 temperature、top-p、seed 与默认值的支持不同。生产 trace 要记录实际模型版本与采样配置；升级模型或 SDK 后重新跑分布性回归，不把 seed 当跨版本保证。</p>
+      <p><b>幂等边界</b>：不要假设「SDK 自动重试」等于业务幂等。由应用生成稳定 operation_id，在自己的数据库与下游副作用处建立唯一约束；供应商若提供请求级幂等能力，也只是额外防线。</p>
+    </div>
+  </div>
+</section>
+
+<!-- ================= Quiz ================= -->
+<section id="quiz">
+  <div class="sec-tag"><span class="cell"></span><span class="lab">Quiz 自测</span></div>
+  <h2>章末自测</h2>
+  <div class="quiz">
+
+    <details>
+      <summary><span class="qtype">架构评审</span>一个客服系统开启 streaming，检测到 JSON 可以解析就立即执行退款；失败由 SDK 自动重试。指出至少四处契约缺口。</summary>
+      <div class="answer">
+        <p><b>① 把可解析误当完成。</b>中间 delta 恰好能组成合法 JSON，不代表流已完成；必须等待明确终态并拒绝 failed / incomplete。</p>
+        <p><b>② 只有语法验证。</b>还需校验退款订单存在、金额不超过可退余额、币种一致、政策允许。</p>
+        <p><b>③ 缺少授权边界。</b>模型提出退款不代表当前用户或 agent 有权限执行；执行层必须独立鉴权。</p>
+        <p><b>④ 重试不幂等。</b>超时后服务端可能已退款。稳定 operation_id 必须跨 SDK 重试复用，并在退款写入处有唯一约束。</p>
+        <p><b>⑤ UI 与提交状态混淆。</b>流式内容只能标为草稿；最终成功要来自事务提交结果，而不是模型文本。</p>
+      </div>
+    </details>
+
+    <details>
+      <summary><span class="qtype">场景判断</span>启用严格 JSON Schema 后，是否可以删除业务校验？为什么？</summary>
+      <div class="answer">
+        <p><b>不可以。</b>Schema 能证明对象形状、类型、必填字段和部分枚举/范围约束，却不知道外部事实与动态业务状态。</p>
+        <p>例如 <code>{"order_id":"A12","refund":500}</code> 可以完全符合 schema，但 A12 可能不存在、属于另一个租户、已全额退款，或原订单只有 100 元。正确分层是：约束生成缩小语法空间，schema validator 再验证结构，领域服务读取权威状态验证语义，策略层验证权限，最后以幂等事务提交。</p>
+      </div>
+    </details>
+
+    <details>
+      <summary><span class="qtype">面试题改编</span>「把采样调到最保守，能不能让 LLM 工作流可复现？你会怎么测试？」</summary>
+      <div class="answer">
+        <p><b>不能把它当保证。</b>保守采样可能降低输出差异，但模型快照、服务实现、并行与数值计算变化仍可能改变输出；即使文本稳定，也不代表答案正确。</p>
+        <p><b>测试契约而非字面。</b>对固定版本记录 prompt、工具、采样参数与 trace；确定性检查 schema、枚举、金额守恒、权限和幂等；语义质量用标注集；对关键用例重复采样，比较契约通过率与切片分布。模型或供应商版本变化时重新跑回归，不要求逐字相同。</p>
+      </div>
+    </details>
+
+    <details>
+      <summary><span class="qtype">决策题</span>一次工具调用超时后，你不知道下游是否成功。什么时候可以自动重试？</summary>
+      <div class="answer">
+        <p><b>先看业务操作是否幂等。</b>纯读取通常可安全重试；有副作用的操作只有在相同 operation_id 能被下游去重，或你能先查询其最终状态时才适合自动重试。</p>
+        <p><b>状态未知时不盲重放。</b>先按 operation_id 查询提交记录；已成功则返回原结果，明确失败且错误可重试才重试，仍不确定则进入 reconciliation 或人工处理。指数退避解决的是负载冲击，不解决重复副作用。</p>
+      </div>
+    </details>
+
+  </div>
+</section>
+
+<nav class="next">
+  <a href="6-5-degradation-fallback.html">← 6.5 Degradation 与 Fallback</a>
+  <a href="../appendix-a-tooling.html">附录 A 工具层速查 →</a>
+</nav>
+
+</div>
+<script src="../assets/quiz.js"></script>
+</body>
+</html>

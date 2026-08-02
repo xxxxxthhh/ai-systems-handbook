@@ -139,7 +139,7 @@
       <p><b>这项工作对应用层的意义在于降低了门槛</b>：偏好对齐从「需要一支 RL 团队」变成了「和 SFT 差不多的一次训练」。今天各类微调框架普遍内置 DPO 训练器，一个小团队可以在几天内跑通。</p>
       <p><b>但门槛降低的只是训练那一环</b>——真正的成本转移到了<b>偏好数据的收集</b>上。你仍然需要成对的「A 比 B 好」标注，而这需要明确的偏好标准和一致的标注者。<b>当一项技术的某个环节被大幅简化时，瓶颈通常只是移动到了别处，而不是消失了</b>；此处它移到了数据，这与 <a href="5-3-data-engineering.html">5.3</a> 的结论一致。</p>
       <p><b>条件说明</b>：论文的对比在其选定的任务与基线上进行。DPO 与 RLHF 及后续各类变体的优劣仍是活跃的研究领域，<b>不应把「DPO 全面优于 RLHF」当作定论</b>。对应用层团队而言，可迁移的判断是：<b>需要偏好对齐时，DPO 通常是工程上更可行的起点。</b></p>
-      <div class="src">来源：Rafailov, Sharma, Mitchell, Manning, Ermon, Finn, "Direct Preference Optimization: Your Language Model is Secretly a Reward Model", NeurIPS 2023. 结论引自论文摘要；示意图为本书重绘。</div>
+      <div class="src">来源：Rafailov, Sharma, Mitchell, Manning, Ermon, Finn, <a href="https://arxiv.org/abs/2305.18290">"Direct Preference Optimization: Your Language Model is Secretly a Reward Model"</a>, NeurIPS 2023. 结论引自论文摘要；示意图为本书重绘。</div>
     </div>
   </div>
 

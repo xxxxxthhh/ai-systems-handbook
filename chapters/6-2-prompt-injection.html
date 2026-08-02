@@ -141,7 +141,7 @@
       </div>
       <p><b>论文的核心论断值得逐字记住</b>：<b>LLM 集成应用模糊了数据与指令之间的界线。</b>这一句解释了为什么这个问题至今没有根本解——它不是某个模型的缺陷，而是<b>「把不可信内容和可信指令拼进同一个上下文」这一架构本身的属性</b>。换模型不能修复它，加 prompt 防护也不能。</p>
       <p><b>「蠕虫式传播」这一类尤其值得注意</b>：如果模型的输出会被写入某处（笔记、工单、代码注释、知识库），而这些内容之后又会被同一个或另一个 agent 读取，那么一次成功的注入可以自我复制。<b>设计系统时要特别警惕「模型输出 → 存储 → 被模型再次读取」这个回路</b>，它把一次性攻击变成了持续性感染。</p>
-      <div class="src">来源：Greshake, Abdelnabi, Mishra, Endres, Holz, Fritz, "Not What You've Signed Up For: Compromising Real-World LLM-Integrated Applications with Indirect Prompt Injection", AISec@CCS 2023 (arXiv:2302.12173). 攻击分类与结论引自论文。</div>
+      <div class="src">来源：Greshake, Abdelnabi, Mishra, Endres, Holz, Fritz, <a href="https://arxiv.org/abs/2302.12173">"Not What You've Signed Up For: Compromising Real-World LLM-Integrated Applications with Indirect Prompt Injection"</a>, AISec@CCS 2023. 攻击分类与结论引自论文。</div>
     </div>
   </div>
 </section>

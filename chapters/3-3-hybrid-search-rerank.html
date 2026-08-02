@@ -146,7 +146,7 @@
       <p><b>② 基于重排的方案取得了整体最好的零样本表现，但计算成本高昂。</b>这正是两阶段架构存在的理由——把昂贵的精确打分限制在少量候选上，让它的成本变得可以承受。</p>
       <p><b>③ 稠密检索模型计算上更高效，但常常表现不及其他方法，泛化能力有相当大的改进空间。</b></p>
       <p><b>对工程的直接含义</b>：<b>公开榜单上的 embedding 模型排名，对你的领域可能没有参考价值</b>——那些分数大多在模型见过的分布上测得。如果你的场景涉及内部术语、专有名词或小众领域，务必假设稠密检索的表现会明显低于榜单，并<b>在自己的数据上重测</b>。这也解释了为什么「换一个榜单排名更高的 embedding 模型」经常带不来预期的改善。</p>
-      <div class="src">来源：Thakur, Reimers, Rücklé, Srivastava, Gurevych, "BEIR: A Heterogeneous Benchmark for Zero-shot Evaluation of Information Retrieval Models", NeurIPS 2021 Datasets and Benchmarks Track. 结论引自论文摘要。</div>
+      <div class="src">来源：Thakur, Reimers, Rücklé, Srivastava, Gurevych, <a href="https://arxiv.org/abs/2104.08663">"BEIR: A Heterogeneous Benchmark for Zero-shot Evaluation of Information Retrieval Models"</a>, NeurIPS 2021 Datasets and Benchmarks Track. 结论引自论文摘要。</div>
     </div>
   </div>
 </section>

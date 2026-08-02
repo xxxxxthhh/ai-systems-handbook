@@ -134,7 +134,7 @@
       <p><b>三个数字的差异比数字本身更有信息量。</b>同一套方法，在 MT Bench 上省 85%，在 GSM8K 上只省 35%——这不是方法不稳定，而是<b>三个基准的请求难度分布不同</b>。MT Bench 含大量开放式对话，弱模型也能给出人类满意的回答；GSM8K 是数学推理，强弱模型的能力差距真实存在且难以回避。</p>
       <p>这印证了本章开头的判断：<b>路由的收益上限由你的流量构成决定</b>。别人报告的节省比例对你几乎没有参考价值，除非你的请求难度分布和他相似。上线路由前的第一件事不是选算法，而是<b>在自己的真实流量上测出「小模型足够好」的请求占比</b>。</p>
       <p>另一个值得借鉴的是数据来源的选择：他们没有专门标注「这个问题难不难」，而是<b>复用了已有的偏好对比数据</b>。这个思路可以直接搬到自己的系统里——线上已有的用户重试、点踩、人工接管记录，就是现成的路由训练信号。</p>
-      <div class="src">来源：Ong et al., "RouteLLM: Learning to Route LLMs from Preference Data", arXiv:2406.18665，后发表于 ICLR 2025；数字引自论文与 LMSYS 公开博客。基线为全部使用 GPT-4。</div>
+      <div class="src">来源：Ong et al., <a href="https://arxiv.org/abs/2406.18665">"RouteLLM: Learning to Route LLMs with Preference Data"</a>，后发表于 ICLR 2025；数字引自论文与 LMSYS 公开博客。基线为全部使用 GPT-4。</div>
     </div>
   </div>
 </section>

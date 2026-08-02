@@ -137,7 +137,7 @@
       <p><b>④ 最值得内化的一条：修复通道本身也可能被故障波及。</b>on-call 工程师<b>被锁在集群之外，无法执行 kubectl</b>，这显著延长了恢复时间。对应到 LLM 应用上，这个模式很常见——<b>如果你的降级开关、配置中心、或运维面板本身依赖着正在故障的那个组件，那么你会在最需要它的时候失去它。</b>降级开关应当尽可能简单、独立、且可以在最小依赖下生效（例如一个静态配置文件或环境变量，而不是一个需要调用多个服务才能读到的动态配置）。</p>
 
       <p><b>依赖方的行动清单</b>：把上游 status page 接进监控；准备 L3/L4 级降级（只检索不生成、兜底回答）；<b>演练</b>降级开关而不只是实现它；确保降级路径不依赖可能同时故障的组件。</p>
-      <div class="src">来源：OpenAI 公开发布的 2024 年 12 月 11 日事故报告（status.openai.com）及公开报道。时间、根因与贡献因素均引自公开信息；本处仅作依赖方视角的工程解读，不含任何非公开信息。</div>
+      <div class="src">来源：OpenAI 公开发布的 <a href="https://status.openai.com/incidents/01JMYB483C404VMPCW726E8MET/write-up">2024 年 12 月 11 日事故报告</a>。时间、根因与贡献因素均引自公开 postmortem；本处仅作依赖方视角的工程解读，不含任何非公开信息。</div>
     </div>
   </div>
 </section>
@@ -212,7 +212,7 @@
 
 <nav class="next">
   <a href="6-4-eval-pipeline.html">← 6.4 Eval Pipeline</a>
-  <a href="../appendix-a-tooling.html">附录 A 工具层速查 →</a>
+  <a href="6-6-generation-output-contracts.html">6.6 Generation 与 Output Contracts →</a>
 </nav>
 
 </div>

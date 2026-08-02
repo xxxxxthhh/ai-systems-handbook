@@ -3,7 +3,7 @@
 双语 HTML 电子书（中文为主，英文术语原文标注），面向应用层 AI 工程师。
 每章 = 核心概念 + 真实案例 + 原创图表 + 章末自测。纯静态 HTML/CSS/JS，无框架依赖。
 
-**状态**：全书已完稿——6 个 Part、29 个章节页、3 篇附录、69 条术语、93 道自测题。
+**状态**：全书已完稿——6 个 Part、30 个章节页、3 篇附录。术语与自测题数量由附录生成器按当前章节自动汇总。
 
 本地预览直接用浏览器打开 `index.html` 即可（无需构建步骤）。
 
@@ -11,7 +11,7 @@
 
 ```
 ├── index.html                     # 全书目录
-├── chapters/                      # 29 个章节页（part-章-slug.html）
+├── chapters/                      # 30 个章节页（part-章-slug.html）
 ├── appendix-a-tooling.html        # 附录 A 工具层速查
 ├── glossary.html                  # 附录 B 术语表　　（自动生成）
 ├── appendix-c-interview-index.html# 附录 C 面试题索引（自动生成）

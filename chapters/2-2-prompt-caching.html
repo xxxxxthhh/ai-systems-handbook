@@ -124,7 +124,7 @@
       </div>
       <p><b>条件</b>：提升幅度高度依赖负载的前缀共享程度——多轮对话、few-shot、同一套 system prompt 服务大量用户的场景收益最大；而每个请求都完全不同的负载则几乎没有收益。这也再次印证了本章的判断标准：<b>缓存的价值等于复用的程度。</b></p>
       <p>值得注意的是它与 <a href="1-2-kv-cache.html">1.2 的 PagedAttention</a> 的关系：分页让「多个逻辑块指向同一个物理块」成为可能，RadixAttention 则在其上回答「哪些块应该被共享、什么时候淘汰」。<b>底层机制解锁能力，上层策略决定收益。</b></p>
-      <div class="src">来源：Zheng et al., "SGLang: Efficient Execution of Structured Language Model Programs" (arXiv:2312.07104) 及 LMSYS 项目公开说明。数字引自公开报告；示意图为本书重绘。</div>
+      <div class="src">来源：Zheng et al., <a href="https://arxiv.org/abs/2312.07104">"SGLang: Efficient Execution of Structured Language Model Programs"</a> 及项目公开说明。数字引自公开报告；示意图为本书重绘。</div>
     </div>
   </div>
 </section>

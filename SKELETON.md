@@ -106,6 +106,8 @@
 - 6.4 **Eval Pipeline** — 离线 eval / 在线 A/B / 回归测试三层体系
 - 6.5 **Degradation 与 Fallback** — 上游模型故障、限流、降级策略
   - 案例：公开 postmortem 选编（对应期权手册的「经典历史案例」角色）
+- 6.6 **Generation 与 Output Contracts** — 采样与非复现、structured syntax vs semantic validation、streaming 暂定事件与提交点、幂等重试
+  - 案例：流式 JSON 与重试叠加导致重复副作用的匿名化复盘
 
 ## 附录
 

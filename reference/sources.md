@@ -2,7 +2,7 @@
 
 CLAUDE.md 写作红线：**不虚构论文数据；引用论文数字须可溯源**。
 本文件登记正文中每一个归属于论文 / 公开报告的数字，及其核验状态。
-`reference/` 不发布，仅供构建与审校使用。
+`reference/` 不发布，仅供构建与审校使用。每个外部来源同时记录稳定 URL；公开章节的 `.src` 必须提供同一来源的可点击链接。
 
 状态说明：
 - **已核验** — 构建时通过检索原始论文摘要 / 出版方页面确认过数字与条件。
@@ -17,16 +17,16 @@ CLAUDE.md 写作红线：**不虚构论文数据；引用论文数字须可溯�
 
 | 章节 | 数字 / 主张 | 条件（必须同时出现在正文） | 来源 | 状态 |
 |------|------------|---------------------------|------|------|
-| 1.1 | 同一内容跨语言 token 数最高差 **15×** | 跨语言对比测量 | Petrov, La Malfa, Torr, Bibi, *Language Model Tokenizers Introduce Unfairness Between Languages*, NeurIPS 2023 | 已核验 |
+| 1.1 | 同一内容跨语言 token 数最高差 **15×** | 跨语言对比测量 | [Petrov, La Malfa, Torr, Bibi, *Language Model Tokenizers Introduce Unfairness Between Languages*, NeurIPS 2023](https://arxiv.org/abs/2305.15425) | 已核验 |
 | 1.1 | 字符级/字节级模型部分语言对仍有 **>4×** 差距 | 同上 | 同上 | 已核验 |
 | 1.1 | 多轮对话 token 累积估算 | 假设中文 1 字≈1.3 token（正文明示需实测） | — | 自行推导 |
-| 1.2 | KV 显存浪费 **60–80%**、改造后 **<4%**、吞吐 **2–4×**、block=16 | vs 2023 年 SOTA（FasterTransformer / Orca 等） | Kwon et al., *Efficient Memory Management for LLM Serving with PagedAttention*, SOSP 2023 | 沿用审定样章 |
-| 1.3 | **36.9×** 吞吐提升 | GPT-3 175B，**固定延迟 190ms** 时，基线 NVIDIA FasterTransformer；0.185 → 6.81 req/s | Yu, Jeong, Kim, Kim, Chun, *Orca*, OSDI 2022 | 已核验 |
-| 1.4 | 离群特征在 **6.7B** 规模全面涌现；约 **6** 个维度承载约 15 万离群值；置零导致困惑度劣化 **600–1000%**；占比约 **0.1%** | Transformer 激活值测量 | Dettmers et al., *LLM.int8()*, NeurIPS 2022 | 已核验 |
-| 1.4 | 175B 模型 **~4 GPU 小时**量化到 3–4 bit；OPT-175B 3-bit 困惑度 **8.68** vs 全精度 **8.34** | 一次性 PTQ | Frantar et al., *GPTQ*, ICLR 2023 | 已核验 |
-| 1.4 | 保护约 **1%** 显著权重即可大幅降低量化误差；相对 HF FP16 实现 **>3×** 加速 | MLSys 2024 最佳论文 | Lin et al., *AWQ*, MLSys 2024 | 已核验 |
+| 1.2 | KV 显存浪费 **60–80%**、改造后 **<4%**、吞吐 **2–4×**、block=16 | vs 2023 年 SOTA（FasterTransformer / Orca 等） | [Kwon et al., *Efficient Memory Management for LLM Serving with PagedAttention*, SOSP 2023](https://arxiv.org/abs/2309.06180) | 沿用审定样章 |
+| 1.3 | **36.9×** 吞吐提升 | GPT-3 175B，**固定延迟 190ms** 时，基线 NVIDIA FasterTransformer；0.185 → 6.81 req/s | [Yu, Jeong, Kim, Kim, Chun, *Orca*, OSDI 2022](https://www.usenix.org/conference/osdi22/presentation/yu) | 已核验 |
+| 1.4 | 离群特征在 **6.7B** 规模全面涌现；约 **6** 个维度承载约 15 万离群值；置零导致困惑度劣化 **600–1000%**；占比约 **0.1%** | Transformer 激活值测量 | [Dettmers et al., *LLM.int8()*, NeurIPS 2022](https://arxiv.org/abs/2208.07339) | 已核验 |
+| 1.4 | 175B 模型 **~4 GPU 小时**量化到 3–4 bit；OPT-175B 3-bit 困惑度 **8.68** vs 全精度 **8.34** | 一次性 PTQ | [Frantar et al., *GPTQ*, ICLR 2023](https://arxiv.org/abs/2210.17323) | 已核验 |
+| 1.4 | 保护约 **1%** 显著权重即可大幅降低量化误差；相对 HF FP16 实现 **>3×** 加速 | MLSys 2024 最佳论文 | [Lin et al., *AWQ*, MLSys 2024](https://arxiv.org/abs/2306.00978) | 已核验 |
 | 1.4 | 7B 模型各位宽显存占用（14/7/3.5 GB） | 参数量 × 每参数字节数 | — | 自行推导 |
-| 1.5 | **2×–3×** 加速，输出分布完全一致 | **T5-XXL**，基线为标准 T5X 实现 | Leviathan, Kalman, Matias, *Fast Inference from Transformers via Speculative Decoding*, ICML 2023 (arXiv:2211.17192) | 已核验 |
+| 1.5 | **2×–3×** 加速，输出分布完全一致 | **T5-XXL**，基线为标准 T5X 实现 | [Leviathan, Kalman, Matias, *Fast Inference from Transformers via Speculative Decoding*, ICML 2023](https://arxiv.org/abs/2211.17192) | 已核验 |
 | 1.5 | 期望产出 = (1−α^(K+1))/(1−α) | 明示「每个草稿 token 独立以概率 α 被接受」的简化假设 | — | 自行推导 |
 
 ---
@@ -35,14 +35,14 @@ CLAUDE.md 写作红线：**不虚构论文数据；引用论文数字须可溯�
 
 | 章节 | 数字 / 主张 | 条件（必须同时出现在正文） | 来源 | 状态 |
 |------|------------|---------------------------|------|------|
-| 2.1 | 服务容量 **2.6×**（Mistral-7B/1×A100）、**3.7×**（Yi-34B/2×A100）、**5.6×**（Falcon-180B + 流水线并行） | 基线均为 vLLM；衡量的是**满足延迟约束下的服务容量**，非裸吞吐 | Agrawal et al., *Taming Throughput-Latency Tradeoff in LLM Inference with Sarathi-Serve*, USENIX OSDI 2024 | 已核验 |
+| 2.1 | 服务容量 **2.6×**（Mistral-7B/1×A100）、**3.7×**（Yi-34B/2×A100）、**5.6×**（Falcon-180B + 流水线并行） | 基线均为 vLLM；衡量的是**满足延迟约束下的服务容量**，非裸吞吐 | [Agrawal et al., *Taming Throughput-Latency Tradeoff in LLM Inference with Sarathi-Serve*, USENIX OSDI 2024](https://www.usenix.org/conference/osdi24/presentation/agrawal) | 已核验 |
 | 2.1 | E2E ≈ TTFT + TPOT × (N−1) | 指标定义式 | — | 定义 |
-| 2.2 | 吞吐最高 **5×**；RadixAttention 自动前缀复用 | 相对基线系统；收益高度依赖负载的前缀共享程度 | Zheng et al., *SGLang: Efficient Execution of Structured Language Model Programs*, arXiv:2312.07104 + LMSYS 公开说明 | 已核验 |
+| 2.2 | 吞吐最高 **5×**；RadixAttention 自动前缀复用 | 相对基线系统；收益高度依赖负载的前缀共享程度 | [Zheng et al., *SGLang: Efficient Execution of Structured Language Model Programs*](https://arxiv.org/abs/2312.07104) | 已核验 |
 | 2.2 | 缓存节省 87% 的算例 | 明示假设：缓存读取价为普通输入 1/10、命中率≈100% | — | 自行推导 |
-| 2.3 | 成本下降 **>85%** (MT Bench) / **45%** (MMLU) / **35%** (GSM8K)，同时保持 **95%** GPT-4 性能 | 基线为全部使用 GPT-4；路由器由 Chatbot Arena 偏好数据训练 | Ong et al., *RouteLLM: Learning to Route LLMs from Preference Data*, arXiv:2406.18665 / ICLR 2025 | 已核验 |
+| 2.3 | 成本下降 **>85%** (MT Bench) / **45%** (MMLU) / **35%** (GSM8K)，同时保持 **95%** GPT-4 性能 | 基线为全部使用 GPT-4；路由器由 Chatbot Arena 偏好数据训练 | [Ong et al., *RouteLLM: Learning to Route LLMs with Preference Data*](https://arxiv.org/abs/2406.18665), ICLR 2025 | 已核验 |
 | 2.3 | 级联盈亏平衡 p < 1 − c_小/c_大 | 明示为自行推导 | — | 自行推导 |
 | 2.4 | Little's Law：在途请求数 = 到达率 × 停留时间 | 排队论经典结论 | — | 教科书结论 |
-| 2.4 | 全章容量推演（18 QPS 案例、39→21 张卡等） | **全部为匿名化示例假设**，正文明确要求读者代入自测数据重算 | — | 自行推导 |
+| 2.4 | 全章容量推演（18 QPS trace、48→32 张卡候选等） | **全部为匿名化示例假设**；卡数明确为特定 trace 回放门禁的示例结果，解析式只作诊断下限 | — | 自行推导 |
 
 ---
 
@@ -50,11 +50,11 @@ CLAUDE.md 写作红线：**不虚构论文数据；引用论文数字须可溯�
 
 | 章节 | 数字 / 主张 | 条件（必须同时出现在正文） | 来源 | 状态 |
 |------|------------|---------------------------|------|------|
-| 3.1 | 参数化 + 非参数化记忆框架；三条动机（知识访问受限、provenance、更新世界知识）；三个开放域 QA 上 SOTA | 参数化记忆 = 预训练 seq2seq；非参数化 = Wikipedia 稠密向量索引 | Lewis et al., *Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks*, NeurIPS 2020 (arXiv:2005.11401) | 已核验 |
+| 3.1 | 参数化 + 非参数化记忆框架；三条动机（知识访问受限、provenance、更新世界知识）；三个开放域 QA 上 SOTA | 参数化记忆 = 预训练 seq2seq；非参数化 = Wikipedia 稠密向量索引 | [Lewis et al., *Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks*, NeurIPS 2020](https://arxiv.org/abs/2005.11401) | 已核验 |
 | 3.2 | 切分失败三类症状与修复顺序 | **匿名化复盘**，正文已标注为工程实践总结而非实验数据 | — | 匿名化案例 |
-| 3.3 | BM25 是稳健基线；重排类零样本最优但计算成本高；稠密检索计算高效但常表现不及其他方法、泛化空间大 | 18 个数据集、10 个检索系统，**零样本跨领域**设定 | Thakur et al., *BEIR*, NeurIPS 2021 Datasets & Benchmarks | 已核验 |
+| 3.3 | BM25 是稳健基线；重排类零样本最优但计算成本高；稠密检索计算高效但常表现不及其他方法、泛化空间大 | 18 个数据集、10 个检索系统，**零样本跨领域**设定 | [Thakur et al., *BEIR*, NeurIPS 2021 Datasets & Benchmarks](https://arxiv.org/abs/2104.08663) | 已核验 |
 | 3.3 | RRF 公式 1/(k+rank)，k 常取 60 | 标准融合方法 | — | 通用做法 |
-| 3.4 | U 形曲线；相关信息在开头/结尾时性能最高、中间显著下降；长上下文模型亦然 | 多文档问答与键值检索任务；正文已标注结论随模型演进可能变化 | Liu et al., *Lost in the Middle*, TACL Vol.12 (2024) (arXiv:2307.03172) | 已核验 |
+| 3.4 | U 形曲线；相关信息在开头/结尾时性能最高、中间显著下降；长上下文模型亦然 | 多文档问答与键值检索任务；正文已标注结论随模型演进可能变化 | [Liu et al., *Lost in the Middle*, TACL Vol.12 (2024)](https://arxiv.org/abs/2307.03172) | 已核验 |
 | 3.5 | Recall@k / MRR / nDCG / Precision@k | 信息检索经典指标 | — | 教科书结论 |
 | 3.5 | 「换两次 embedding 无效、瓶颈在排序」案例 | **匿名化复盘**，百分比已标注为示意性描述 | — | 匿名化案例 |
 
@@ -65,11 +65,11 @@ CLAUDE.md 写作红线：**不虚构论文数据；引用论文数字须可溯�
 | 章节 | 数字 / 主张 | 条件（必须同时出现在正文） | 来源 | 状态 |
 |------|------------|---------------------------|------|------|
 | 4.1 | 18→6 工具的重构复盘 | **匿名化**，正文标注为叙述性概括非测量数据 | — | 匿名化案例 |
-| 4.2 | ALFWorld **+34%**、WebShop **+10%** 绝对成功率提升；HotpotQA/Fever 上借简单 Wikipedia API 缓解幻觉与错误传播 | 相对模仿学习/强化学习方法；2023 年的基准与基线，正文已声明不可外推 | Yao et al., *ReAct*, ICLR 2023 | 已核验 |
+| 4.2 | ALFWorld **+34%**、WebShop **+10%** 绝对成功率提升；HotpotQA/Fever 上借简单 Wikipedia API 缓解幻觉与错误传播 | 相对模仿学习/强化学习方法；2023 年的基准与基线，正文已声明不可外推 | [Yao et al., *ReAct*, ICLR 2023](https://arxiv.org/abs/2210.03629) | 已核验 |
 | 4.2 | 端到端可靠性 p^n；循环三重代价 | 明示为自行推导 | — | 自行推导 |
 | 4.3 | 摘要压缩丢失约束条件的复盘 | **匿名化**，正文标注为工程实践总结 | — | 匿名化案例 |
-| 4.4 | **+90.2%**；**~15×** token（单 agent 约 4×）；token 用量解释 **80%** 方差，加工具调用次数与模型选择三者合计 **95%** | 90.2% = **Opus 4 主 agent + Sonnet 4 子 agent vs 单 agent Opus 4**，在其**内部研究类评测**上，任务形态为**需多方向并行展开的广度优先查询**；方差分析出自 **BrowseComp**。厂商自报，正文与 .src 均声明未独立复现 | Anthropic 工程博客 *How we built our multi-agent research system*（**已 WebFetch 核对原文**） | 已核验（一手） |
-| 4.5 | SOTA 函数调用 agent 成功率 **<50%**；零售域 **pass^8 <25%**；pass^k 指标定义 | 论文摘要原文；2024 年对当时模型的测量，正文声明数值随模型演进变化 | Yao, Shinn et al., *τ-bench*, arXiv:2406.12045（**已 WebFetch 核对摘要原文**） | 已核验（一手） |
+| 4.4 | **+90.2%**；**~15×** token（单 agent 约 4×）；token 用量解释 **80%** 方差，加工具调用次数与模型选择三者合计 **95%** | 90.2% = **Opus 4 主 agent + Sonnet 4 子 agent vs 单 agent Opus 4**，在其**内部研究类评测**上，任务形态为**需多方向并行展开的广度优先查询**；方差分析出自 **BrowseComp**。厂商自报，正文与 .src 均声明未独立复现 | [Anthropic 工程博客 *How we built our multi-agent research system*](https://www.anthropic.com/engineering/multi-agent-research-system) | 已核验（一手） |
+| 4.5 | SOTA 函数调用 agent 成功率 **<50%**；零售域 **pass^8 <25%**；pass^k 指标定义 | 论文摘要原文；2024 年对当时模型的测量，正文声明数值随模型演进变化 | [Yao, Shinn et al., *τ-bench*](https://arxiv.org/abs/2406.12045) | 已核验（一手） |
 | 4.5 | 私有 AI 助理平台评估体系三阶段演进 | **匿名化**，正文标注为工程实践总结 | — | 匿名化案例 |
 
 > 注：4.4 的数字来自厂商自身公开博客而非独立同行评审来源，是本书引用链中最弱的一环。
@@ -88,11 +88,11 @@ CLAUDE.md 写作红线：**不虚构论文数据；引用论文数字须可溯�
 
 | 章节 | 数字 / 主张 | 条件（必须同时出现在正文） | 来源 | 状态 |
 |------|------------|---------------------------|------|------|
-| 5.2 | 可训练参数 **10,000×** 减少、GPU 显存 **3×** 降低、质量持平或更好 | **对比 GPT-3 175B 用 Adam 全量微调**；质量在 RoBERTa/DeBERTa/GPT-2/GPT-3 上验证。正文声明倍数随规模/优化器/rank 变化 | Hu et al., *LoRA*, ICLR 2022 (arXiv:2106.09685) | 已核验 |
-| 5.2 | 单张 **48GB** GPU 微调 **65B**；保持全 16-bit 微调表现；NF4 / 双重量化 / 分页优化器；Guanaco 达 ChatGPT **99.3%**、单卡 **24 小时** | 99.3% 是**在 Vicuna 基准上、以特定评判方式**得到；正文已就此加注不可泛化 | Dettmers et al., *QLoRA*, NeurIPS 2023 (arXiv:2305.14314) | 已核验 |
-| 5.3 | phi-1：**1.3B** 参数、8×A100 训 **4 天**、6B token 教科书质量数据 + 1B token 合成数据；HumanEval **50.6%**、MBPP **55.5%**；phi-1-small 350M 达 **45%** | **代码领域**；「教科书质量」的筛选方法是该工作核心贡献，不可简单套用 | Gunasekar et al., *Textbooks Are All You Need*, arXiv:2306.11644 | 已核验 |
-| 5.3 | Alpaca：**175** 条种子指令 → **52,000** 条合成数据；数据生成 **<$500**、复现 **<$600** | 由 text-davinci-003 生成；成本为该团队公开说明 | Stanford CRFM 公开博客, 2023-03-13 | 已核验 |
-| 5.4 | DPO 单阶段、无需拟合奖励模型、无需微调中采样、稳定轻量、效果不逊于既有方法 | 论文选定的任务与基线；正文声明 DPO/RLHF 优劣仍是活跃研究领域，非定论 | Rafailov et al., *DPO*, NeurIPS 2023 | 已核验 |
+| 5.2 | 可训练参数 **10,000×** 减少、GPU 显存 **3×** 降低、质量持平或更好 | **对比 GPT-3 175B 用 Adam 全量微调**；质量在 RoBERTa/DeBERTa/GPT-2/GPT-3 上验证。正文声明倍数随规模/优化器/rank 变化 | [Hu et al., *LoRA*, ICLR 2022](https://arxiv.org/abs/2106.09685) | 已核验 |
+| 5.2 | 单张 **48GB** GPU 微调 **65B**；保持全 16-bit 微调表现；NF4 / 双重量化 / 分页优化器；Guanaco 达 ChatGPT **99.3%**、单卡 **24 小时** | 99.3% 是**在 Vicuna 基准上、以特定评判方式**得到；正文已就此加注不可泛化 | [Dettmers et al., *QLoRA*, NeurIPS 2023](https://arxiv.org/abs/2305.14314) | 已核验 |
+| 5.3 | phi-1：**1.3B** 参数、8×A100 训 **4 天**、6B token 教科书质量数据 + 1B token 合成数据；HumanEval **50.6%**、MBPP **55.5%**；phi-1-small 350M 达 **45%** | **代码领域**；「教科书质量」的筛选方法是该工作核心贡献，不可简单套用 | [Gunasekar et al., *Textbooks Are All You Need*](https://arxiv.org/abs/2306.11644) | 已核验 |
+| 5.3 | Alpaca：**175** 条种子指令 → **52,000** 条合成数据；数据生成 **<$500**、复现 **<$600** | 由 text-davinci-003 生成；成本为该团队公开说明 | [Stanford CRFM 公开博客, 2023-03-13](https://crfm.stanford.edu/2023/03/13/alpaca) | 已核验 |
+| 5.4 | DPO 单阶段、无需拟合奖励模型、无需微调中采样、稳定轻量、效果不逊于既有方法 | 论文选定的任务与基线；正文声明 DPO/RLHF 优劣仍是活跃研究领域，非定论 | [Rafailov et al., *DPO*, NeurIPS 2023](https://arxiv.org/abs/2305.18290) | 已核验 |
 | 5.3 | 灾难性遗忘 | 神经网络经典问题 | — | 教科书结论 |
 
 ---
@@ -102,10 +102,14 @@ CLAUDE.md 写作红线：**不虚构论文数据；引用论文数字须可溯�
 | 章节 | 数字 / 主张 | 条件（必须同时出现在正文） | 来源 | 状态 |
 |------|------------|---------------------------|------|------|
 | 6.1 | 日期进 prompt 前缀导致缓存命中率归零 | **匿名化复盘**，正文标注为工程实践总结 | — | 匿名化案例 |
-| 6.2 | 间接注入攻击面；「LLM 集成应用模糊了数据与指令的界线」；数据窃取 / 蠕虫式传播 / 信息生态污染分类；浏览代理外传用户数据的演示 | 论文提出的攻击分类与演示 | Greshake, Abdelnabi, Mishra, Endres, Holz, Fritz, *Not What You've Signed Up For*, AISec@CCS 2023 (arXiv:2302.12173) | 已核验 |
-| 6.3 | 赔偿 **$812.02** 加元；裁定**疏忽性失实陈述**成立；「聊天机器人是独立实体」抗辩被驳回；须对网站全部信息负责 | 加拿大 BC 省民事解决法庭 **2024-02-14** 裁决；正文声明仅陈述公开事实、不作法律建议 | Moffatt v. Air Canada, 2024 BCCRT + 公开报道 | 已核验（公开裁决） |
+| 6.2 | 间接注入攻击面；「LLM 集成应用模糊了数据与指令的界线」；数据窃取 / 蠕虫式传播 / 信息生态污染分类；浏览代理外传用户数据的演示 | 论文提出的攻击分类与演示 | [Greshake et al., *Not What You've Signed Up For*, AISec@CCS 2023](https://arxiv.org/abs/2302.12173) | 已核验 |
+| 6.3 | 检索相似度只能作为待校准信号；按同领域标注集选阈值；成对监控 coverage 与 selective error | 阈值绑定 embedding、索引、切分、query 处理与部署领域；变化后重校准 | [Rouzrokh et al., *CONFLARE*](https://arxiv.org/abs/2404.04287)；[Geifman & El-Yaniv, *SelectiveNet*, ICML 2019](https://proceedings.mlr.press/v97/geifman19a.html) | 已核验（一手） |
+| 6.3 | 赔偿 **$812.02** 加元；裁定**疏忽性失实陈述**成立；「聊天机器人是独立实体」抗辩被驳回；须对网站全部信息负责 | 加拿大 BC 省民事解决法庭 **2024-02-14** 裁决；正文声明仅陈述公开事实、不作法律建议 | [Moffatt v. Air Canada, 2024 BCCRT 149](https://decisions.civilresolutionbc.ca/crt/crtd/en/item/525448/index.do) | 已核验（公开裁决） |
 | 6.4 | 未校准评委的长度/格式偏好导致三周弯路 | **匿名化复盘**，分数变化标注为叙述性描述 | — | 匿名化案例 |
-| 6.5 | **2024-12-11 15:16–19:38 PST** 全服务降级/不可用；根因为新遥测服务配置导致每节点执行开销随集群规模增长的 K8s API 操作、压垮控制平面；测试未捕捉；DNS 缓存延迟症状；**on-call 被锁在集群外无法执行 kubectl** | OpenAI **自行公开发布**的事故报告；正文声明仅作依赖方视角解读、不含非公开信息 | OpenAI status page 事故报告 + 公开报道 | 已核验（公开 postmortem） |
+| 6.5 | **2024-12-11 15:16–19:38 PST** 全服务降级/不可用；根因为新遥测服务配置导致每节点执行开销随集群规模增长的 K8s API 操作、压垮控制平面；测试未捕捉；DNS 缓存延迟症状；**on-call 被锁在集群外无法执行 kubectl** | OpenAI **自行公开发布**的事故报告；正文声明仅作依赖方视角解读、不含非公开信息 | [OpenAI status page 事故报告](https://status.openai.com/incidents/01JMYB483C404VMPCW726E8MET/write-up) | 已核验（公开 postmortem） |
+| 6.6 | 低随机性不等于跨版本/平台逐字复现；测试可接受契约而非字符串快照 | 正文只写稳定原则；具体 API 参数放日期侧栏 | [PyTorch Reproducibility](https://docs.pytorch.org/docs/stable/notes/randomness.html) | 已核验（官方文档） |
+| 6.6 | 流式 delta 属于暂定传输事件，完成后仍须验证；JSON Schema 只约束结构；重试需在业务提交点幂等 | 供应商事件名仅在日期侧栏；正文以 transport / schema / semantic / authorization / commit 分层 | [WHATWG Server-sent events](https://html.spec.whatwg.org/multipage/server-sent-events.html)；[JSON Schema Specification](https://json-schema.org/specification)；[RFC 9110 §9.2.2](https://www.rfc-editor.org/rfc/rfc9110.html#name-idempotent-methods) | 已核验（标准/官方规范） |
+| 6.6 | Responses streaming 终态事件与 Structured Outputs 当前接口形态 | **截至 2026-08** 的工具层快照，正文不依赖具体事件名与字段 | [OpenAI Streaming events](https://platform.openai.com/docs/api-reference/responses-streaming)；[OpenAI Structured Outputs](https://platform.openai.com/docs/guides/structured-outputs) | 已核验（官方文档，易过期） |
 
 > 写作红线核对：6.3 与 6.5 均为**公开可查**的裁决/事故报告，正文只使用公开信息、未添油加醋，
 > 且均以「工程含义」而非「归咎」的角度书写。全部匿名化案例不含可识别的公司/产品/个人信息。
@@ -114,8 +118,8 @@ CLAUDE.md 写作红线：**不虚构论文数据；引用论文数字须可溯�
 
 ## 全书核对小结
 
-- **已核验（一手/公开原始来源）**：Part 1 六项、Part 2 三项、Part 3 三项、Part 4 三项、Part 5 五项、Part 6 三项。
+- **已核验（一手/公开原始来源）**：所有外部主张均在上表给出稳定 URL，公开章节的来源块同步提供可点击链接。
 - **全部引用均已核验，无仅凭记忆写入的数字。**其中 τ-bench 与 Anthropic 多 agent 两项直接抓取原文逐字核对；
   后者虽为厂商自报（非同行评审），条件已完整写入正文。
 - **自行推导**：全部标注计算方法与假设，未归属任何论文。
-- **匿名化案例**：7 处，均在 `.src` 中声明为综合多项目的匿名化复盘、非实验测量数据。
+- **匿名化案例**：均在各自 `.src` 中声明为综合多项目的匿名化复盘或推演，而非外部实验测量数据；数量由章节内容决定，不在台账中手工固化。

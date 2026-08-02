@@ -130,7 +130,7 @@
       </div>
       <p><b>务必连同条件一起记住这个数字</b>：它是「把延迟固定在 190ms 这一水平时，两者各能做到多少吞吐」的比值，在 GPT-3 175B 这一特定模型上测得，基线是 2022 年的 FasterTransformer。换一个模型规模、换一个延迟目标、换一份请求长度分布，倍数就完全不同——真正可迁移的结论不是「36.9 倍」，而是<b>「当请求的生成长度高度不均时，调度粒度的浪费可以大到一个数量级」</b>。</p>
       <p>今天几乎所有主流推理框架都默认开启连续批处理，所以这个提升对你多半已经内建在框架里了。它的现实意义在别处：<b>如果你自己写推理循环、或用一个只做 static batching 的老框架，你可能正在把一个数量级的吞吐扔在地上。</b></p>
-      <div class="src">来源：Yu, Jeong, Kim, Kim, Chun, "Orca: A Distributed Serving System for Transformer-Based Generative Models", OSDI 2022. 数字引自论文评测（GPT-3 175B，与 FasterTransformer 对比）；示意图为本书重绘。</div>
+      <div class="src">来源：Yu, Jeong, Kim, Kim, Chun, <a href="https://www.usenix.org/conference/osdi22/presentation/yu">"Orca: A Distributed Serving System for Transformer-Based Generative Models"</a>, OSDI 2022. 数字引自论文评测（GPT-3 175B，与 FasterTransformer 对比）；示意图为本书重绘。</div>
     </div>
   </div>
 </section>

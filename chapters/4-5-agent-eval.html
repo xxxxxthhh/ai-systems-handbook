@@ -111,7 +111,7 @@
       <p><b>pass<sup>8</sup> 低于 25% 意味着什么</b>：即使任务本身的单次成功率还过得去，让 agent 把同一件事连做 8 次都做对，成功概率不足四分之一。<b>对于任何要放进自动化流程的应用，这个数字比「单次成功率」更能说明它能不能用。</b></p>
       <p><b>这项工作对工程实践的三条启示</b>：<br><b>①</b> 评估 agent 必须<b>重复多次跑同一个任务</b>，报告一致性而非单次结果。只跑一遍的评估报告应当被视为不完整。<br><b>②</b> <b>规则遵循是一个独立的失败维度。</b>agent 可能「完成了任务但违反了政策」——比如成功改了订单，却跳过了必需的身份验证步骤。这在只看任务完成率的评估里是隐形的，必须单独设指标。<br><b>③</b> <b>用户交互本身是评估的一部分。</b>真实场景中用户不会一次说清需求，agent 需要追问、澄清、处理反悔。用「一句话完整需求」构造的评估集会大幅高估真实表现。</p>
       <p><b>条件</b>：上述数字为该论文发布时（2024）对当时模型的测量，具体数值必然随模型演进而变化。<b>可迁移的不是数字，是 pass<sup>k</sup> 这个衡量方式</b>——以及「先进模型在真实业务任务上的一致性，远低于单次基准分数所暗示的水平」这一判断。</p>
-      <div class="src">来源：Yao, Shinn, et al., "τ-bench: A Benchmark for Tool-Agent-User Interaction in Real-World Domains", arXiv:2406.12045. 引用的数字（成功率 &lt;50%、零售域 pass<sup>8</sup> &lt;25%）出自论文摘要原文。</div>
+      <div class="src">来源：Yao, Shinn, et al., <a href="https://arxiv.org/abs/2406.12045">"τ-bench: A Benchmark for Tool-Agent-User Interaction in Real-World Domains"</a>. 引用的数字（成功率 &lt;50%、零售域 pass<sup>8</sup> &lt;25%）出自论文摘要原文。</div>
     </div>
   </div>
 

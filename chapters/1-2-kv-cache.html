@@ -164,7 +164,7 @@
         <div class="stat"><div class="n good">16</div><div class="l">默认 block 大小（token 数）</div></div>
       </div>
       <p>浪费的显存被释放出来意味着<b>同样的卡能塞下更长的批次</b>——吞吐提升不是来自算得更快，而是来自「一批能同时跑更多序列」。这个案例最值得记住的一点是：2–4 倍的性能提升里<b>没有任何一行 CUDA kernel 的算力优化</b>，纯粹来自内存管理策略的改变。vLLM 随后开源，PagedAttention 成为几乎所有主流推理框架的标配。</p>
-      <div class="src">来源：Kwon et al., "Efficient Memory Management for Large Language Model Serving with PagedAttention", SOSP 2023. 数字均引自论文；示意图为本书重绘。</div>
+      <div class="src">来源：Kwon et al., <a href="https://arxiv.org/abs/2309.06180">"Efficient Memory Management for Large Language Model Serving with PagedAttention"</a>, SOSP 2023. 数字均引自论文；示意图为本书重绘。</div>
     </div>
   </div>
 </section>

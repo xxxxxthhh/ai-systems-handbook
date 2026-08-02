@@ -52,6 +52,21 @@ def check_chapter(path, name):
             err(name, "缺少真实案例区块 .case")
     elif 'class="src"' not in html:
         err(name, "案例缺少来源标注 .src")
+    else:
+        # 公开来源不能只写论文名/站点名；读者必须能直接抵达一手材料。
+        # 匿名案例可以没有外链，但一旦 .src 声称/指向外部规范、论文、裁决或报告，
+        # 就必须带可点击链接。不能只检查字符串是否以“来源：”开头。
+        for src in re.findall(r'<div class="src">(.*?)</div>', html, flags=re.S):
+            plain = re.sub(r"<[^>]+>", "", src).strip()
+            public_markers = (
+                "来源：", "Source:", "参见", "see ", "RFC ", "规范", "standard",
+                "论文", "paper", "裁决", "ruling", "报告", "report", "postmortem",
+            )
+            claims_external_source = any(marker.lower() in plain.lower()
+                                         for marker in public_markers)
+            if claims_external_source and not re.search(
+                    r'<a\s+href="https://[^\"]+"', src):
+                err(name, "公开来源 .src 缺少可点击的 HTTPS 链接")
 
     # 锚点 id（glossary 的首次出现链接依赖它们）
     if not guide:
@@ -119,6 +134,22 @@ def check_links():
                 err(name, "锚点不存在: {}".format(href))
 
 
+def check_source_ledger():
+    """权威引用台账中的外部来源必须记录 URL。"""
+    path = os.path.join(ROOT, "reference", "sources.md")
+    for lineno, line in enumerate(open(path, encoding="utf-8"), 1):
+        if not line.startswith("|") or "---" in line or "章节" in line:
+            continue
+        cells = [c.strip() for c in line.strip().strip("|").split("|")]
+        if len(cells) != 5:
+            err("reference/sources.md", "第 {} 行表格列数不是 5".format(lineno))
+            continue
+        source = cells[3]
+        if (source not in ("—", "同上")
+                and not re.search(r'https://[^)\s]+', source)):
+            err("reference/sources.md", "第 {} 行外部来源缺少 HTTPS URL".format(lineno))
+
+
 def main():
     only = sys.argv[1:]
     names = sorted(f for f in os.listdir(CHAPTERS) if f.endswith(".html"))
@@ -127,6 +158,7 @@ def main():
             continue
         check_chapter(os.path.join(CHAPTERS, f), f)
     check_links()
+    check_source_ledger()
 
     done = len(names) - len(stubs)
     print("章节 {}/{} 已完稿".format(done, len(names)))

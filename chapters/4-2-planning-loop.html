@@ -134,7 +134,7 @@
       <p>在 HotpotQA 与 Fever 上，ReAct <b>通过与一个简单的 Wikipedia API 交互</b>，缓解了 chain-of-thought 中普遍存在的幻觉与错误传播问题。这一点尤其值得注意：解决幻觉的手段不是更强的推理，而是<b>让模型能去查</b>——与 <a href="3-1-why-rag.html">3.1</a> 中 RAG 的思路完全一致。</p>
       <p><b>条件</b>：这些数字来自 2023 年的特定基准与当时的基线方法，不能直接外推到今天的任务。<b>可迁移的是那个结构性洞察</b>：推理与行动交错，比先想完再做或边做不想都更稳健——因为它让每一步的决策都建立在真实反馈之上。今天几乎所有 agent 框架的主循环，本质上都是 ReAct 的变体。</p>
       <p><b>顺带一提它的局限</b>：ReAct 是逐步贪心的，没有全局计划，因此在需要通盘权衡或可并行的任务上容易绕远路——这正是 plan-and-execute 类模式补位的地方。</p>
-      <div class="src">来源：Yao, Zhao, Yu, Du, Shafran, Narasimhan, Cao, "ReAct: Synergizing Reasoning and Acting in Language Models", ICLR 2023. 数字与结论引自论文摘要。</div>
+      <div class="src">来源：Yao, Zhao, Yu, Du, Shafran, Narasimhan, Cao, <a href="https://arxiv.org/abs/2210.03629">"ReAct: Synergizing Reasoning and Acting in Language Models"</a>, ICLR 2023. 数字与结论引自论文摘要。</div>
     </div>
   </div>
 </section>

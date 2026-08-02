@@ -131,7 +131,7 @@
       <p><b>② 排序在 RAG 里比你以为的更重要。</b>既然位置影响利用率，那么 rerank（<a href="3-3-hybrid-search-rerank.html">3.3</a>）的价值就不只是「让好的排前面以免被截断」，还包括<b>让最相关的材料落在模型最容易利用的位置</b>。一个实用技巧是把最相关的片段放在上下文的<b>开头或结尾</b>，而不是按相关性顺序一路排下去。</p>
       <p><b>③ 少即是多。</b>召回 20 个片段不一定比召回 5 个好——多出来的 15 个不仅增加成本，还会把关键信息挤到中间位置去。这与直觉相反，也是许多 RAG 系统「召回数量调大后效果反而变差」的原因。</p>
       <p><b>需要注意的边界</b>：这项研究测的是特定模型与特定任务，具体模型的表现会随架构与训练方式演进而变化。<b>可迁移的不是「中间一定差」这个结论，而是「必须实测有效利用率，不能假设窗口内均匀可用」这个方法。</b>做法很简单：把已知答案的材料放在不同位置各测一轮，看准确率是否稳定。</p>
-      <div class="src">来源：Liu, Lin, Hewitt, Paranjape, Bevilacqua, Petroni, Liang, "Lost in the Middle: How Language Models Use Long Contexts", TACL Vol. 12 (2024) (arXiv:2307.03172). 结论引自论文摘要。</div>
+      <div class="src">来源：Liu, Lin, Hewitt, Paranjape, Bevilacqua, Petroni, Liang, <a href="https://arxiv.org/abs/2307.03172">"Lost in the Middle: How Language Models Use Long Contexts"</a>, TACL Vol. 12 (2024). 结论引自论文摘要。</div>
     </div>
   </div>
 </section>

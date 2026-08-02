@@ -45,6 +45,7 @@ CH_META = {
     "6-3-hallucination": ("6.3", "幻觉的工程化缓解"),
     "6-4-eval-pipeline": ("6.4", "Eval Pipeline"),
     "6-5-degradation-fallback": ("6.5", "Degradation 与 Fallback"),
+    "6-6-generation-output-contracts": ("6.6", "Generation 与 Output Contracts"),
 }
 
 # 术语 -> (中文名, 释义)。释义须与正文一致，不生造译名。
@@ -118,6 +119,11 @@ GLOSS = {
     "parameterized query": ("参数化查询", "SQL 中从语法层分离语句与数据的机制，它根治了 SQL 注入。LLM 缺少对应的结构，这正是 prompt injection 难以根治的原因。"),
     "indirect prompt injection": ("间接提示注入", "把恶意指令藏在模型会读到的外部内容里，借受害者的权限执行。凡是接入检索或工具的系统都要按它来建模。"),
     "circuit breaker": ("熔断器", "连续失败达阈值后快速失败、定期试探恢复。既避免拖死自己，也给上游留出恢复空间。"),
+    "sampling": ("采样", "从模型给出的下一个 token 概率分布中选择输出。它使生成天然允许多种结果，工程上应验证可接受集合而非逐字快照。"),
+    "output contract": ("输出契约", "模型候选输出在产生业务效果前必须满足的完整性、结构、语义、权限与幂等条件。"),
+    "structured output": ("结构化输出", "把模型输出限制在指定 schema 的语法空间内。它保证形状，不保证字段值符合现实、权限或业务规则。"),
+    "commit point": ("提交点", "候选输出经过完整性、结构、语义、权限与幂等校验后，获准产生业务副作用的唯一边界。"),
+    "idempotency key": ("幂等键", "标识同一业务意图的稳定键。重试可以发生多次，但相同幂等键最终只能产生一次可见业务效果。"),
 }
 
 # 面试题索引按题型分组的展示顺序

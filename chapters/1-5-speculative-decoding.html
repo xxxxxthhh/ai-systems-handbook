@@ -129,7 +129,7 @@
       </div>
       <p><b>条件同样要记住</b>：这是在 T5-XXL 上、以标准 T5X 实现为基线测得的。它是一个 encoder-decoder 模型，测试负载与今天典型的高并发聊天服务相差很大——不要把 2–3× 直接套用到你的场景上。</p>
       <p>这项工作真正的分量在于两点：<b>其一</b>，它指出了「验证比生成便宜得多」这个此前未被利用的不对称性；<b>其二</b>，它证明了加速<b>可以做到分布无损</b>，从而把这类优化从「质量换速度」的范畴里摘了出来。后续的 Medusa、EAGLE、n-gram 查表等一系列变体，改的都是「草稿从哪来」，而分布无损的验证框架基本延续了下来。</p>
-      <div class="src">来源：Leviathan, Kalman, Matias, "Fast Inference from Transformers via Speculative Decoding", ICML 2023 (arXiv:2211.17192). 数字引自论文；示意图为本书重绘。期望产出公式为本书按独立性假设自行推导，用于建立直觉。</div>
+      <div class="src">来源：Leviathan, Kalman, Matias, <a href="https://arxiv.org/abs/2211.17192">"Fast Inference from Transformers via Speculative Decoding"</a>, ICML 2023. 数字引自论文；示意图为本书重绘。期望产出公式为本书按独立性假设自行推导，用于建立直觉。</div>
     </div>
   </div>
 </section>

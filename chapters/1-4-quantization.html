@@ -155,7 +155,7 @@
       <p><b>AWQ 则从「哪些权重重要」入手。</b>它的核心观察是权重并非同等重要——<b>保护约 1% 的显著权重就能大幅降低量化误差</b>；而判断哪些权重显著，要<b>看激活值分布而不是看权重本身</b>。它通过搜索逐通道缩放系数来保护这部分权重，不需要反向传播或重建，因而不易过拟合校准集。论文报告其实现相对 HuggingFace FP16 实现取得<b>超过 3 倍</b>的加速，并获 MLSys 2024 最佳论文奖。</p>
 
       <p><b>把三者放在一起看</b>，你会看到同一个问题的三种应对姿势：<b>隔离</b>（LLM.int8()）、<b>补偿</b>（GPTQ）、<b>重分配</b>（AWQ）。这个「异常值要么隔离、要么补偿、要么归一」的模式在系统工程里到处都是——记住模式比记住方法名有用得多。</p>
-      <div class="src">来源：Dettmers et al., "LLM.int8(): 8-bit Matrix Multiplication for Transformers at Scale", NeurIPS 2022；Frantar et al., "GPTQ: Accurate Post-Training Quantization for Generative Pre-trained Transformers", ICLR 2023；Lin et al., "AWQ: Activation-aware Weight Quantization for On-Device LLM Compression and Acceleration", MLSys 2024. 数字均引自各论文；示意图为本书重绘。</div>
+      <div class="src">来源：Dettmers et al., <a href="https://arxiv.org/abs/2208.07339">"LLM.int8(): 8-bit Matrix Multiplication for Transformers at Scale"</a>, NeurIPS 2022；Frantar et al., <a href="https://arxiv.org/abs/2210.17323">"GPTQ: Accurate Post-Training Quantization for Generative Pre-trained Transformers"</a>, ICLR 2023；Lin et al., <a href="https://arxiv.org/abs/2306.00978">"AWQ: Activation-aware Weight Quantization for On-Device LLM Compression and Acceleration"</a>, MLSys 2024. 数字均引自各论文；示意图为本书重绘。</div>
     </div>
   </div>
 </section>

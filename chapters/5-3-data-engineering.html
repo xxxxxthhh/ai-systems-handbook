@@ -148,7 +148,7 @@
       <p><b>Alpaca：合成数据的成本结构。</b>Stanford 团队从 <b>175 条</b>人工编写的种子指令出发，用 <code>text-davinci-003</code> 生成了 <b>52,000 条</b>指令-输出对，再用它微调 LLaMA 7B。团队公开说明：数据生成的 API 花费<b>不到 500 美元</b>，整个复现成本<b>不到 600 美元</b>。</p>
       <p><b>这个案例确立的模式，正是本 Part 故事线在做的事</b>：<b>用强模型的输出作为弱模型的训练数据</b>。它的经济学非常有吸引力——一次性的生成成本，换来长期的推理成本下降。</p>
       <p><b>但要注意两条边界</b>：<b>①</b> 学生模型学到的是教师的<b>输出风格与表层行为</b>，不必然获得教师的底层能力——它可能「说得像」但在真正困难的样本上仍然不行；<b>②</b> 使用商业模型的输出训练模型，<b>需要核对该服务的使用条款</b>，这是法务问题而非技术问题，务必事先确认。</p>
-      <div class="src">来源：Gunasekar et al., "Textbooks Are All You Need", arXiv:2306.11644（数字引自论文摘要）；Stanford CRFM, "Alpaca: A Strong, Replicable Instruction-Following Model", 2023-03-13 公开博客（数字引自该博客）。</div>
+      <div class="src">来源：Gunasekar et al., <a href="https://arxiv.org/abs/2306.11644">"Textbooks Are All You Need"</a>（数字引自论文摘要）；Stanford CRFM, <a href="https://crfm.stanford.edu/2023/03/13/alpaca">"Alpaca: A Strong, Replicable Instruction-Following Model"</a>, 2023-03-13 公开博客（数字引自该博客）。</div>
     </div>
   </div>
 
