@@ -8,7 +8,8 @@
 <link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Noto+Sans+SC:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Noto+Sans+SC:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
+<noscript><link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Noto+Sans+SC:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet"></noscript>
 <link rel="stylesheet" href="assets/handbook.css">
 <script src="assets/theme.js"></script>
 </head>
@@ -218,6 +219,19 @@
       <p><b>生产环境模型标识</b>：<b>一律使用带版本后缀的具体标识，绝不用 latest 别名</b>；并把模型版本记进 trace（<a href="chapters/6-5-degradation-fallback.html">6.5</a>）。</p>
       <p><b>安全</b>：OWASP Top 10 for LLM Applications 可作为安全评审的检查清单起点。注入检测分类器（Llama Guard、Rebuff 等）是<b>纵深防御的一层，不是安全边界</b>——真正的边界在执行侧的权限控制（<a href="chapters/6-2-prompt-injection.html">6.2</a>）。</p>
       <p><b>约束解码 / 结构化输出</b>：Outlines、XGrammar，以及 vLLM / SGLang 内置的语法约束；商业 API 普遍提供 structured outputs 或严格模式。<b>凡是「格式不稳定」的问题，先用它解决，不要用微调。</b></p>
+    </div>
+  </div>
+
+  <div class="toolbox">
+    <div class="toolbox-head">
+      <span class="t">输出契约与幂等提交</span>
+      <span class="date">截至 2026-08</span>
+    </div>
+    <div class="toolbox-body">
+      <p><b>流式事件</b>：主流 API 的流式接口都区分 delta 与终态事件（完成 / 失败 / 截断），事件名与字段以各家文档为准。<b>业务副作用只能在终态且通过全部验证之后触发</b>，delta 只用于展示（<a href="chapters/6-6-generation-output-contracts.html">6.6</a>）。</p>
+      <p><b>Structured outputs 的边界</b>：严格模式通常只支持 JSON Schema 的一个子集，且只保证形状——字段值的事实、权限与业务语义校验仍在应用侧，schema 通过不等于可以执行。</p>
+      <p><b>采样与复现</b>：不同供应商对 temperature / top-p / seed 的支持与默认值不同。trace 里记录实际模型版本与采样配置；模型或 SDK 升级后重跑分布性回归，<b>不把 seed 当跨版本保证</b>。</p>
+      <p><b>幂等</b>：SDK 自动重试不等于业务幂等。应用自己生成稳定的 operation_id，在副作用落点建唯一约束；供应商的请求级幂等能力只是额外防线，不能替代自己的提交点设计。</p>
     </div>
   </div>
 </section>
