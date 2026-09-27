@@ -96,7 +96,7 @@
         <tbody>
           <tr><td><b>GPTQ / AWQ</b></td><td>仅权重，4-bit</td><td>显存受限；社区有大量预量化权重可直接下载</td></tr>
           <tr><td><b>FP8</b></td><td>权重 + 激活</td><td>较新硬件（Hopper 及之后）；<b>高并发服务端吃到低精度算力的主要路线之一</b></td></tr>
-          <tr><td><b>FP4（NVFP4 / MXFP4）</b></td><td>4-bit 浮点格式；具体配方可能只量化权重（如 W4A16），也可能权重 + 激活一起量化（如 W4A4），激活精度按模型与推理后端确认</td><td>Blackwell 及之后原生支持 FP4 计算；比 FP8 更省显存与带宽，质量需按任务评测</td></tr>
+          <tr><td><b>FP4（NVFP4 / MXFP4）</b></td><td>4-bit 浮点格式；具体配方可能只量化权重（如 W4A16），也可能权重 + 激活一起量化（如 W4A4），激活精度按模型与推理后端确认</td><td>Blackwell 及之后原生支持 FP4 计算；可降低被量化张量的占用，整机显存、带宽与速度取决于 W4A16 / W4A4 配方、模型、负载和后端，质量需按任务评测</td></tr>
           <tr><td><b>GGUF（Q4_K_M 等）</b></td><td>仅权重，多档位</td><td>本地 / CPU / 端侧；2-bit 档位质量风险明显</td></tr>
           <tr><td><b>KV cache 量化（FP8/INT8）</b></td><td>KV cache</td><td>与权重量化正交可叠加；<b>直接放大并发上限，性价比常被低估</b></td></tr>
         </tbody>
