@@ -142,10 +142,10 @@
   <div class="toolbox">
     <div class="toolbox-head">
       <span class="t">批处理相关的常见旋钮（会过期，正文不依赖本区块）</span>
-      <span class="date">截至 2026-08</span>
+      <span class="date">截至 2026-09</span>
     </div>
     <div class="toolbox-body">
-      <p><b>默认已开启</b>：vLLM、SGLang、TGI、TensorRT-LLM 均默认使用连续批处理，无需手动开关。你要调的是它的边界参数。</p>
+      <p><b>默认已开启</b>：vLLM、SGLang、TGI、TensorRT-LLM 均默认使用连续批处理，无需手动开关（其中 TGI 已进入维护模式，见<a href="../appendix-a-tooling.html">附录 A</a>）。你要调的是它的边界参数。</p>
       <p><b>vLLM</b>：<code>--max-num-seqs</code> 限制批内最大并发序列数；<code>--max-num-batched-tokens</code> 限制单次迭代的 token 预算（同时影响 prefill 切块大小）。前者控并发，后者控单次迭代的耗时上限，是 TTFT/TPOT 平衡的主要手柄。</p>
       <p><b>chunked prefill</b>：vLLM 等框架已支持并在多数版本中默认启用，用于抑制长 prefill 对解码流畅度的冲击；其思想来自 Sarathi / Sarathi-Serve 的工作。若你的场景是长输入 + 流式输出，这是首先要确认已打开的选项。</p>
       <p><b>压测要点</b>：只测平均吞吐会掩盖问题。至少要用<b>真实的长度分布</b>压测，并同时观察 TTFT 与 TPOT 的 P50/P99——连续批处理的收益恰恰体现在长度方差大的负载上，用等长请求压测会得到误导性的结论。</p>

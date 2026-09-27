@@ -282,11 +282,15 @@ def build_interview_index(chs):
     order += [q for q in sorted(by_type) if q not in QTYPE_ORDER]
 
     body = ['<section style="margin-top:40px">']
-    body.append("<p>本页从全书 {} 章的章末自测中<b>自动聚合</b>了 <b>{}</b> 道题，"
+    # 章数口径与目录页一致：导读（Part 0）不计入
+    n_chapters = sum(1 for slug in CH_META if not slug.startswith("0-"))
+    body.append("<p>本页从全书 {} 章（不含导读）的章末自测中<b>自动聚合</b>了 <b>{}</b> 道题，"
                 "按题型分组，便于面试前按题型集中复习。"
                 "每题链接回原章节，参考答案与推导过程在原章节中默认折叠——"
                 "<b>建议先自己回答，再展开对照</b>。</p>"
-                .format(len(CH_META), len(items)))
+                .format(n_chapters, len(items)))
+    body.append('<p class="part-extra">配套练习：想练开放式的 Agent 设计题（限时交卷、逐层追问），'
+                '见姊妹篇<a href="https://xxxxxthhh.github.io/agent-interview-handbook/">《Agent 设计面试手册》</a>。</p>')
     # 锚点用 order 中的序号，不能用 hash(str)——Python 每个进程的字符串 hash
     # 都不同（PYTHONHASHSEED 默认随机），会导致每次重新生成 id 全变：
     # 产生无内容变化的 diff，且外部指向 #q-xxxx 的链接全部失效。

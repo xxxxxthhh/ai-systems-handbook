@@ -201,6 +201,7 @@ svg .onfill{font:500 11px 'IBM Plex Mono',monospace;fill:var(--on-fill)}
 .toc .t{font-weight:500}
 .toc .d{font-size:13.5px;color:var(--ink-soft);flex:1 1 260px}
 .toc a[aria-disabled="true"]{color:var(--ink-soft);cursor:default}
+.part-extra{font-size:13.5px;color:var(--ink-soft);margin:10px 4px 0}
 
 .callout{background:var(--card);border:1px solid var(--line);border-left:4px solid var(--alloc);border-radius:8px;padding:16px 20px 4px;margin:24px 0}
 .callout p:last-child{margin-bottom:16px}

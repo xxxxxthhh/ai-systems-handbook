@@ -150,10 +150,10 @@
   <div class="toolbox">
     <div class="toolbox-head">
       <span class="t">多 agent 编排的现状（会过期，正文不依赖本区块）</span>
-      <span class="date">截至 2026-08</span>
+      <span class="date">截至 2026-09</span>
     </div>
     <div class="toolbox-body">
-      <p><b>编排框架</b>：LangGraph（以图结构定义状态与转移）、CrewAI（角色分工抽象）、AutoGen（多方对话式协作）等各有侧重。<b>选型前先确定你需要的是哪种拓扑</b>——是「主从（orchestrator-worker）」「流水线」还是「自由对话」。这三种的可控性与调试难度差别极大，其中<b>自由对话式最难在生产中控制</b>。</p>
+      <p><b>编排框架</b>：LangGraph（以图结构定义状态与转移）、CrewAI（角色分工抽象）、AutoGen（多方对话式协作；已进入维护模式，官方建议新项目改用其后继 Agent Framework，后者 1.0 于 2026-04 发布）等各有侧重。<b>选型前先确定你需要的是哪种拓扑</b>——是「主从（orchestrator-worker）」「流水线」还是「自由对话」。这三种的可控性与调试难度差别极大，其中<b>自由对话式最难在生产中控制</b>。</p>
       <p><b>最实用的形态是 orchestrator-worker</b>：一个主 agent 负责拆解与汇总，若干 worker 并行执行独立子任务，worker 之间<b>不互相通信</b>。它的信息流是树状而非网状，可预测、可限流、可调试。多方自由对话虽然更「智能」，但轮数与成本难以预估，且极易陷入互相附和的循环。</p>
       <p><b>成本控制是硬需求</b>：多 agent 的成本方差极大，必须设置<b>全局 token 预算</b>与<b>subagent 数量上限</b>，并在超限时优雅降级。没有预算闸门的多 agent 系统会在遇到复杂输入时产生离谱账单。</p>
       <p><b>可观测性要求更高</b>：需要能看到<b>每个 subagent 的完整轨迹</b>以及它们之间传递的消息。只记录最终输出的多 agent 系统基本无法排查——你连是哪个 subagent 出的错都不知道。这类系统的调试成本本身就是它的一项重要代价。</p>

@@ -176,12 +176,12 @@
   <div class="toolbox">
     <div class="toolbox-head">
       <span class="t">当前生态速查（会过期，正文不依赖本区块）</span>
-      <span class="date">截至 2026-08</span>
+      <span class="date">截至 2026-09</span>
     </div>
     <div class="toolbox-body">
       <p><b>vLLM</b>：PagedAttention 的出处与参考实现，生产环境最常见的开源选择；<code>--block-size</code> 可调块大小，<code>--gpu-memory-utilization</code> 控制 KV cache 可用显存上限。</p>
       <p><b>SGLang</b>：在分页基础上引入 RadixAttention，用基数树自动做跨请求的前缀共享，多轮对话 / few-shot 场景收益明显。</p>
-      <p><b>TensorRT-LLM / TGI</b>：均已内置 paged KV cache；TensorRT-LLM 在 NVIDIA 硬件上通常有额外的 kernel 级优化。</p>
+      <p><b>TensorRT-LLM / TGI</b>：均已内置 paged KV cache；TensorRT-LLM 在 NVIDIA 硬件上通常有额外的 kernel 级优化。TGI 已进入维护模式、仓库已归档，新部署优先考虑 vLLM / SGLang（见<a href="../appendix-a-tooling.html">附录 A</a>）。</p>
       <p><b>KV cache 量化</b>：FP8 / INT8 KV cache 已在主流框架落地，与分页正交，可叠加使用（进一步讨论见 <a href="1-4-quantization.html">1.4 量化</a>）。</p>
     </div>
   </div>

@@ -176,10 +176,10 @@
   <div class="toolbox">
     <div class="toolbox-head">
       <span class="t">怎么把这些指标真的量出来（会过期，正文不依赖本区块）</span>
-      <span class="date">截至 2026-08</span>
+      <span class="date">截至 2026-09</span>
     </div>
     <div class="toolbox-body">
-      <p><b>压测工具</b>：vLLM 自带 <code>benchmark_serving.py</code>，可指定请求到达率与数据集，直接输出 TTFT / TPOT / E2E 的分位数；<code>llmperf</code>、<code>genai-perf</code> 等第三方工具提供类似能力。关键是<b>选一个能报分位数而不只报均值的工具</b>。</p>
+      <p><b>压测工具</b>：vLLM 自带 <code>vllm bench serve</code> 命令，可指定请求到达率与数据集，直接输出 TTFT / TPOT / E2E 的分位数；<code>llmperf</code>、<code>genai-perf</code> 等第三方工具提供类似能力。关键是<b>选一个能报分位数而不只报均值的工具</b>。</p>
       <p><b>务必用真实长度分布</b>：用等长请求压测会系统性地高估性能——连续批处理与分页的收益、prefill 阻塞的代价，全都取决于长度方差。把线上真实的输入/输出长度分布采样出来做压测输入。</p>
       <p><b>务必测排队</b>：单并发下测出的 TTFT 只包含计算时间。把并发压到目标负载的 1×、1.5×、2× 分别测，观察 TTFT 的 P99 在哪个点开始非线性上升——那就是你的容量拐点（<a href="2-4-capacity-planning.html">2.4</a> 会用到这个数）。</p>
       <p><b>线上监控口径</b>：TTFT、TPOT 至少各留 P50/P95/P99，并<b>按输入长度分桶</b>（如 &lt;1K、1–8K、&gt;8K）。不分桶的话，长请求的正常慢会污染整体分位数，掩盖真正的异常。</p>

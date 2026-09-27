@@ -140,10 +140,10 @@
   <div class="toolbox">
     <div class="toolbox-head">
       <span class="t">当前 API 的契约落点（会过期，正文不依赖本区块）</span>
-      <span class="date">截至 2026-08</span>
+      <span class="date">截至 2026-09</span>
     </div>
     <div class="toolbox-body">
-      <p><b>OpenAI Responses API</b>：流式接口会发出带类型的事件。应用应区分 delta、<code>response.completed</code>、<code>response.failed</code> 与 <code>response.incomplete</code>，并检查最终 response 状态；事件名和字段以<a href="https://platform.openai.com/docs/api-reference/responses-streaming">官方 Streaming events 参考</a>为准。</p>
+      <p><b>OpenAI Responses API</b>：流式接口会发出带类型的事件。应用应区分 delta、<code>response.completed</code>、<code>response.failed</code> 与 <code>response.incomplete</code>，并检查最终 response 状态；事件名和字段以<a href="https://developers.openai.com/api/reference/resources/responses/streaming-events">官方 Responses streaming events 参考</a>为准。</p>
       <p><b>Structured Outputs</b>：Responses API 的 <code>text.format</code> 可使用 <code>json_schema</code>；严格模式只支持 JSON Schema 的一个子集。它保证受支持的结构约束，不承担事实、权限或业务语义校验。具体支持范围以<a href="https://platform.openai.com/docs/guides/structured-outputs">官方 Structured Outputs 指南</a>为准。</p>
       <p><b>采样参数</b>：不同供应商对 temperature、top-p、seed 与默认值的支持不同。生产 trace 要记录实际模型版本与采样配置；升级模型或 SDK 后重新跑分布性回归，不把 seed 当跨版本保证。</p>
       <p><b>幂等边界</b>：不要假设「SDK 自动重试」等于业务幂等。由应用生成稳定 operation_id，在自己的数据库与下游副作用处建立唯一约束；供应商若提供请求级幂等能力，也只是额外防线。</p>
