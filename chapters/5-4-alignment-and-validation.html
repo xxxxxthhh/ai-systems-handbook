@@ -178,10 +178,10 @@
   <div class="toolbox">
     <div class="toolbox-head">
       <span class="t">对齐与验证的工具（会过期，正文不依赖本区块）</span>
-      <span class="date">截至 2026-08</span>
+      <span class="date">截至 2026-10</span>
     </div>
     <div class="toolbox-body">
-      <p><b>DPO 及其变体</b>：HuggingFace <code>trl</code> 提供 <code>DPOTrainer</code>，Axolotl / LLaMA-Factory 均已集成。社区还有 ORPO、KTO、SimPO 等变体，各自在数据要求或训练稳定性上有取舍。<b>先用 DPO 跑通，再考虑是否需要变体</b>——变体带来的差异通常小于数据质量带来的差异。</p>
+      <p><b>DPO 及其变体</b>：HuggingFace <code>trl</code> 提供 <code>DPOTrainer</code>，Axolotl / LlamaFactory（原名 LLaMA-Factory）均已集成。社区还有 ORPO、KTO、SimPO 等变体，各自在数据要求或训练稳定性上有取舍。<b>先用 DPO 跑通，再考虑是否需要变体</b>——变体带来的差异通常小于数据质量带来的差异。</p>
       <p><b>能力回归测试集</b>：可以从公开评测集里取一个小子集（MMLU、IFEval 等各抽一两百条）作为快速回归。<b>不需要跑完整基准</b>——你要检测的是「有没有明显退化」，不是刷榜，几百条足以发现问题且几分钟就能跑完。</p>
       <p><b>实验追踪</b>：Weights &amp; Biases、MLflow 等记录超参、指标、数据集版本的对应关系。<b>「哪个模型是用哪版数据、哪组超参训的」必须可追溯</b>，否则几轮迭代之后你会完全无法归因。</p>
       <p><b>模型卡（model card）</b>：为每个微调模型写一份简短说明——训练数据来源与时间范围、目标任务、<b>已知的能力退化与不适用场景</b>、评估结果（分类别）、回退方案。<b>这份文档的主要价值是防止别人误用你的模型</b>，故事线里正是它阻止了一次误用。写它只要半小时。</p>

@@ -157,7 +157,7 @@
   <div class="toolbox">
     <div class="toolbox-head">
       <span class="t">微调框架</span>
-      <span class="date">截至 2026-08</span>
+      <span class="date">截至 2026-10</span>
     </div>
     <div class="toolbox-body">
       <div class="tbl-scroll">
@@ -166,7 +166,7 @@
         <tbody>
           <tr><td><b>Axolotl</b></td><td>YAML 配置驱动，覆盖 SFT / LoRA / QLoRA / DPO，社区配置丰富</td><td>「照着已验证配置改」的团队</td></tr>
           <tr><td><b>Unsloth</b></td><td>速度与显存优化见长，notebook 开箱即用</td><td>单卡场景、快速可行性验证</td></tr>
-          <tr><td><b>LLaMA-Factory</b></td><td>模型覆盖广、带 Web UI，中文社区活跃</td><td>快速试多个基座</td></tr>
+          <tr><td><b>LlamaFactory</b>（原名 LLaMA-Factory）</td><td>模型覆盖广、带 Web UI，中文社区活跃</td><td>快速试多个基座</td></tr>
           <tr><td><b>peft + trl + bitsandbytes</b></td><td>底层组件，最大灵活性</td><td><b>建议至少手写一次训练脚本</b></td></tr>
         </tbody>
       </table>
@@ -199,10 +199,10 @@
   <div class="toolbox">
     <div class="toolbox-head">
       <span class="t">可观测性与评估</span>
-      <span class="date">截至 2026-08</span>
+      <span class="date">截至 2026-10</span>
     </div>
     <div class="toolbox-body">
-      <p><b>LLM 可观测性平台</b>：Langfuse（开源可自托管）、LangSmith、Braintrust、Arize Phoenix、Helicone。核心价值是省掉自建 trace 存储与 UI。</p>
+      <p><b>LLM 可观测性平台</b>：Langfuse（开源可自托管）、LangSmith、Braintrust、Arize Phoenix、Helicone（2026-03 并入 Mintlify，进入维护模式）。核心价值是省掉自建 trace 存储与 UI。</p>
       <p><b>已有成熟可观测性栈的团队</b>：用 OpenTelemetry 把 LLM 调用作为 span 接进现有系统，通常优于引入独立平台——<b>LLM 调用只是系统的一环，割裂成监控孤岛会让端到端排查更难</b>。</p>
       <p><b>评估框架</b>：promptfoo（轻量、配置驱动，适合接 CI）、DeepEval、RAGAS（RAG 专用指标）、以及上述平台自带的评估编排。</p>
       <p><b>使用 LLM-as-judge 的前提</b>：<b>必须先用 50–100 条人工标注校准一致率</b>，且评委模型或 prompt 变更后要重测。优先用<b>二元判定</b>而非 1–10 打分；<b>能程序判定的（JSON 合法性、引用是否存在、枚举值）一律用代码</b>（<a href="chapters/6-4-eval-pipeline.html">6.4</a>）。</p>

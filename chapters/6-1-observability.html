@@ -145,10 +145,10 @@
   <div class="toolbox">
     <div class="toolbox-head">
       <span class="t">可观测性工具（会过期，正文不依赖本区块）</span>
-      <span class="date">截至 2026-08</span>
+      <span class="date">截至 2026-10</span>
     </div>
     <div class="toolbox-body">
-      <p><b>LLM 专用平台</b>：Langfuse（开源，可自托管）、LangSmith、Braintrust、Arize Phoenix、Helicone 等，提供 trace 记录、成本核算、数据集与评估编排。<b>核心价值是省掉自建 trace 存储与 UI</b>，而不是它们的评估功能——评估仍然需要你自己定义指标。</p>
+      <p><b>LLM 专用平台</b>：Langfuse（开源，可自托管）、LangSmith、Braintrust、Arize Phoenix、Helicone（2026-03 并入 Mintlify，进入维护模式）等，提供 trace 记录、成本核算、数据集与评估编排。<b>核心价值是省掉自建 trace 存储与 UI</b>，而不是它们的评估功能——评估仍然需要你自己定义指标。</p>
       <p><b>OpenTelemetry</b>：如果已有成熟的可观测性栈，用 OTel 的语义约定把 LLM 调用作为 span 接进现有系统，往往比引入一套独立平台更合适——<b>LLM 调用只是你系统里的一环，把它割裂成单独的监控孤岛会让端到端排查更难</b>。</p>
       <p><b>成本归因</b>：多数商业 API 支持在请求中带自定义标签/元数据，用于按功能、租户、环境分摊成本。<b>从第一天就打上标签</b>——事后想按业务线拆分成本，如果没打标签就只能重放日志。</p>
       <p><b>告警设计要点</b>：LLM 应用的指标噪声较大，固定阈值容易误报。<b>优先用环比/同比变化率告警</b>（如「每请求平均 token 数较过去 7 日基线上涨超过 30%」），而不是绝对值阈值。另外<b>缓存命中率骤降</b>是一个高价值的单点告警，它能覆盖本章案例那一整类问题。</p>

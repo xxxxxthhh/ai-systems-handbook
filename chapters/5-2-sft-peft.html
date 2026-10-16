@@ -190,12 +190,12 @@
   <div class="toolbox">
     <div class="toolbox-head">
       <span class="t">微调工具链速查（会过期，正文不依赖本区块）</span>
-      <span class="date">截至 2026-08</span>
+      <span class="date">截至 2026-10</span>
     </div>
     <div class="toolbox-body">
       <p><b>Axolotl</b>：以 YAML 配置驱动的微调框架，覆盖 SFT / LoRA / QLoRA / DPO，社区配置示例丰富。适合「照着一个已验证的配置改」的团队。</p>
       <p><b>Unsloth</b>：以速度与显存优化见长，对单卡场景优化明显，提供大量开箱即用的 notebook。适合快速做可行性验证。</p>
-      <p><b>LLaMA-Factory</b>：覆盖模型广、带 Web UI，中文社区活跃，适合快速试多个基座。</p>
+      <p><b>LlamaFactory</b>（原名 LLaMA-Factory）：覆盖模型广、带 Web UI，中文社区活跃，适合快速试多个基座。</p>
       <p><b>底层组件</b>：HuggingFace <code>peft</code>（LoRA 等 PEFT 方法的参考实现）+ <code>trl</code>（SFT/DPO 训练器）+ <code>bitsandbytes</code>（4-bit 量化）。<b>建议至少用底层组件手写一次训练脚本</b>——搞清楚数据格式、loss mask、模板拼接这三件事，比会用任何框架都重要。</p>
       <p><b>最容易出错、也最难发现的一处</b>：<b>chat template 与 loss mask</b>。训练时的对话模板必须与推理时完全一致（差一个特殊 token 都会显著影响效果），且 loss 通常只应计算在<b>助手回复部分</b>，不应计算在用户输入上。<b>这两处配错时，训练照常完成、loss 曲线看起来正常，只是效果莫名其妙地差</b>——排查时优先检查它们。</p>
       <p><b>部署</b>：vLLM、SGLang 等支持直接加载 LoRA adapter，并支持<b>多 adapter 动态切换</b>（一个基座服务多个任务）。这是 LoRA 在生产中相对全量微调最实际的优势。</p>
